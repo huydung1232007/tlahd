@@ -140,15 +140,19 @@ test('Studio camera auto-starts on mount, collapses timer by default, removes he
   for(const fn of root.listeners.click)await fn({target:{closest:sel=>sel==='[data-studio]'?{dataset:{studio:'timer',value:'3'}}:null}});
   assert.equal(root.querySelector('.timer-popover').hidden,true);
   assert.equal(root.querySelector('.timer-badge').textContent,'3s');
-  // 6. Flash toggle & camera zoom (including 0.5x on BOTH front and rear cameras) work cleanly
-  assert.match(root.querySelector('.zoom-bar').innerHTML,/data-value="0\.5"/,'0.5x button must be visible on front camera too');
+  // 6. Flash toggle & transient zoom HUD (hidden when idle, shows current x on zoom, auto-hides after 3s timer)
+  assert.equal(root.querySelector('.zoom-bar').hidden,true,'zoom HUD must be hidden when not zooming');
   assert.equal(root.querySelector('.flash-trigger').attributes['aria-pressed'],'false');
   for(const fn of root.listeners.click)await fn({target:{closest:sel=>sel==='[data-studio]'?{dataset:{studio:'toggle-flash'}}:null}});
   assert.equal(root.querySelector('.flash-trigger').attributes['aria-pressed'],'true');
-  for(const fn of root.listeners.click)await fn({target:{closest:sel=>sel==='[data-studio]'?{dataset:{studio:'zoom',value:'0.5'}}:null}});
-  assert.match(root.querySelector('video').style.transform,/scale\(-1\.000,1\.000\)/,'0.5x widens front camera from 1.22x to full 1.0x wide sensor');
+  const timers=[];
+  context.setTimeout=(fn,ms)=>{if(ms===3000){timers.push(fn);return 99;}fn();return 1;};
   for(const fn of root.listeners.click)await fn({target:{closest:sel=>sel==='[data-studio]'?{dataset:{studio:'zoom',value:'2'}}:null}});
   assert.match(root.querySelector('video').style.transform,/scale\(-2\.000,2\.000\)/);
+  assert.equal(root.querySelector('.zoom-bar').hidden,false,'zoom HUD appears while zooming');
+  assert.equal(root.querySelector('.zoom-bar').innerHTML,'<span class="zoom-pill active">2×</span>','shows only current x value');
+  timers.pop()?.();
+  assert.equal(root.querySelector('.zoom-bar').hidden,true,'zoom HUD disappears after 3s');
   // 7. clearAfterPost wipes Studio state cleanly
   context.ChamStudio.clearAfterPost();
   assert.equal(store.has('studio:u-cam'),false);

@@ -55,7 +55,7 @@ const svgIcons={
 
 let root=null,callbacks={},media=null,activeRecorder=null,liveClips=[],mounted=0,renderId=0,sequence=0,aiBusy=false,lastAIUser=null,toneTimer=null;
 let timerOpen=false,featuresOpen=false,featureTab='digital',startingCamera=false,pickingFileUntil=0;
-let usingUltraWideDevice=false,hwZoomApplied=1,pinchStartDist=0,pinchStartZoom=1;
+let usingUltraWideDevice=false,hwZoomApplied=1,pinchStartDist=0,pinchStartZoom=1,lensSwitching=false,zoomHudVisible=false,zoomHudTimer=null;
 let aiState={available:false,reason:'Đăng nhập Locket để dùng AI.'};
 const $=s=>root?.querySelector(s);
 const need=()=>state.mode==='booth'?state.count:1;
@@ -64,15 +64,16 @@ const hasLiveSet=()=>state.mode==='booth'&&liveClips.slice(0,need()).filter(Bool
 const isDigitalActive=()=>state.mode==='photo'&&(state.look!=='natural'||state.grain>0||state.stamp);
 const isToneActive=()=>!!(state.tone?.brightness||state.tone?.contrast||state.tone?.warmth);
 const isCameraLive=()=>!!(media&&(!media.getVideoTracks||media.getVideoTracks().some(t=>t.readyState==='live'&&!t.muted)));
-function effectiveDigitalZoom(){
- if(state.facing==='user'&&!usingUltraWideDevice&&hwZoomApplied>=1){
-  // Front iPhone TrueDepth lens is native wide (23mm): 0.5x uses full wide sensor (1.0), 1x uses natural portrait framing (1.22)
-  if(state.zoom<=0.5)return 1;
-  if(state.zoom<=1)return 1+((state.zoom-0.5)/0.5)*0.22;
-  if(state.zoom<2)return 1.22+(state.zoom-1)*0.78;
-  return Math.min(4,state.zoom/Math.max(1,hwZoomApplied));
- }
- return state.zoom>1&&hwZoomApplied<state.zoom?Math.min(4,state.zoom/Math.max(1,hwZoomApplied)):1;
+const effectiveDigitalZoom=()=>state.zoom>1&&hwZoomApplied<state.zoom?Math.min(4,state.zoom/Math.max(1,hwZoomApplied)):1;
+
+function showZoomHud(){
+ zoomHudVisible=true;
+ clearTimeout(zoomHudTimer);
+ zoomHudTimer=setTimeout(()=>{zoomHudVisible=false;if(root)update();},3000);
+}
+function hideZoomHud(){
+ clearTimeout(zoomHudTimer);
+ zoomHudVisible=false;
 }
 
 function stop(){sequence++;state.busy=false;state.countdown=0;startingCamera=false;hwZoomApplied=1;usingUltraWideDevice=false;try{activeRecorder?.cancel();}catch{}activeRecorder=null;if(media){media.getTracks().forEach(t=>{try{t.onended=null;t.stop();}catch{}});media=null;}const v=$('video');if(v)v.srcObject=null;}
@@ -125,13 +126,9 @@ function videoTransformCss(){
  const flipX=state.facing==='user'?-dz:dz;
  return `translate(-50%,-50%) scale(${flipX.toFixed(3)},${dz.toFixed(3)})`;
 }
-function zoomPresets(){
- return [0.5,1,2,3];
-}
-function formatZoomLabel(z,isActive){
- const clean=Math.round(z*10)/10;
- const str=clean===0.5?'0.5':String(clean);
- return isActive?str+'×':str;
+function formatCurrentZoom(z){
+ const clean=Math.round(Number(z)*10)/10;
+ return (Number.isInteger(clean)?String(clean):clean.toFixed(1))+'×';
 }
 
 function markup(){return `<div class="studio"><div class="camera-modes" role="group" aria-label="Chế độ chụp"><button data-studio="mode" data-value="photo">Ảnh</button><button data-studio="mode" data-value="booth">Photobooth</button><button data-view="video">Video</button></div><div class="studio-layout"><section class="camera-area"><div class="viewfinder" tabindex="0"><video autoplay playsinline webkit-playsinline muted aria-label="Xem trước camera"></video><img class="frame-preview" alt="Xem trước khung photobooth" hidden><img class="studio-result" alt="Ảnh đang xem lại" hidden><div class="viewfinder-empty"><span class="camera-outline">◎</span><strong>Đang mở camera…</strong><p>Cấp quyền camera hoặc chọn ảnh từ thư viện.</p></div><div class="camera-meta"><span class="mode-label">ẢNH</span><div class="camera-quick-tools"><button type="button" class="flash-trigger" data-studio="toggle-flash" aria-label="Đèn Flash" aria-pressed="false">${svgIcons.flashOff}</button><div class="timer-control"><button type="button" class="timer-trigger" data-studio="toggle-timer" aria-label="Hẹn giờ chụp" aria-expanded="false">${svgIcons.timer}<span class="timer-badge"></span></button><div class="timer-popover" role="group" aria-label="Chọn hẹn giờ" hidden>${[0,3,5,10].map(s=>`<button type="button" data-studio="timer" data-value="${s}">${s?s+'s':'Tắt'}</button>`).join('')}</div></div><button type="button" class="features-trigger" data-studio="toggle-features" aria-label="Tính năng chỉnh ảnh" aria-expanded="false">${svgIcons.features}</button></div></div><div class="zoom-bar" role="group" aria-label="Thu phóng ống kính"></div><div class="countdown" aria-live="assertive"></div><div class="shutter-flash"></div></div><div class="retina-screen-flash" hidden></div><div class="camera-status" role="status"></div><div class="capture-controls"><button type="button" class="round-control" data-studio="files" aria-label="Chọn ảnh từ thư viện">${svgIcons.gallery}</button><button type="button" class="shutter" data-studio="capture" aria-label="Chụp ảnh"><span></span></button><button type="button" class="round-control" data-studio="flip" aria-label="Đổi camera trước hoặc sau">${svgIcons.flip}</button></div><div class="capture-label" hidden></div><input type="file" class="studio-file-input" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden><button class="text-button cancel-retake" data-studio="cancel-retake" hidden>Giữ tấm cũ</button><div class="review-actions" hidden><button type="button" class="round-control review-icon-btn" data-studio="reset" aria-label="Chụp lại">${svgIcons.close}</button><button type="button" class="send-shutter" data-studio="use" aria-label="Đăng lên Locket">${svgIcons.send}</button><button type="button" class="round-control review-icon-btn" data-studio="download" aria-label="Tải xuống">${svgIcons.download}</button></div><div class="live-booth-bar" hidden><button type="button" class="secondary live-booth-btn" data-studio="open-live-booth">▷ Tạo Photobooth động</button></div><div class="booth-shots" aria-label="Ảnh trong photobooth"></div><div class="photo-edit-tools" hidden></div><div class="ai-comparison" hidden></div></section><aside class="studio-settings"><div class="settings-section studio-features-panel" hidden><div class="features-panel-head"><div class="features-tabs" role="tablist" aria-label="Tính năng chỉnh ảnh"><button type="button" data-studio="feature-tab" data-value="digital">Digital Cam</button><button type="button" data-studio="feature-tab" data-value="tone">Ánh sáng & độ ấm</button><button type="button" data-studio="feature-tab" data-value="ai">Chỉnh bằng AI</button></div><button type="button" class="icon-button features-close" data-studio="close-features" aria-label="Đóng tính năng">${svgIcons.close}</button></div><div class="feature-pane feature-pane-digital"><div class="feature-subhead"><span>Màu film Digital Cam</span><button type="button" class="text-button" data-studio="reset-digital" hidden>Tắt Digital Cam</button></div><div class="look-buttons">${Object.entries(looks).map(([id,l])=>`<button type="button" data-studio="look" data-value="${id}"><span class="look-swatch ${id}"></span>${l.name}</button>`).join('')}</div><div class="digital-extras"><label class="range-label" for="grain">Hạt ảnh <output id="grain-value">0</output></label><input type="range" id="grain" min="0" max="32" step="1" value="0"><label class="switch-row">Dấu ngày trên ảnh <input type="checkbox" id="date-stamp"></label></div></div><div class="feature-pane feature-pane-tone" hidden><label class="range-label" for="tone-brightness">Độ sáng <output id="val-brightness">0</output></label><input type="range" id="tone-brightness" data-tone="brightness" min="-30" max="30" step="1" value="0"><label class="range-label" for="tone-contrast">Tương phản <output id="val-contrast">0</output></label><input type="range" id="tone-contrast" data-tone="contrast" min="-30" max="30" step="1" value="0"><label class="range-label" for="tone-warmth">Độ ấm <output id="val-warmth">0</output></label><input type="range" id="tone-warmth" data-tone="warmth" min="-30" max="30" step="1" value="0"><button type="button" class="text-button" data-studio="reset-tone" hidden>Đặt lại ánh sáng</button></div><div class="feature-pane feature-pane-ai" hidden><div class="ai-section-heading"><h2>Chỉnh ảnh bằng AI</h2><span class="ai-service-status">Đang kết nối</span></div><p class="ai-need-photo setting-hint" hidden>Chụp hoặc chọn ảnh trước để chạy AI. Bạn vẫn có thể chọn sẵn gợi ý bên dưới.</p><div class="ai-form"><label for="ai-prompt">Mô tả cách chỉnh</label><textarea id="ai-prompt" maxlength="2000" placeholder="Ví dụ: màu phim Nhật nắng chiều ấm áp, giữ nguyên người trong ảnh"></textarea><div class="prompt-tools"></div><p class="ai-provider-note">Ảnh và prompt chỉ được gửi tới dịch vụ AI khi bạn bấm Chỉnh ảnh.</p><button type="button" class="primary" data-studio="ai-run">Chỉnh ảnh</button><p class="ai-feedback" role="status"></p></div><div class="ai-compare" hidden><button type="button" class="secondary" data-studio="ai-original">Giữ ảnh gốc</button><button type="button" class="primary" data-studio="ai-use">Dùng ảnh AI</button></div><button type="button" class="text-button ai-revert" data-studio="ai-revert" hidden>Quay lại ảnh gốc trước AI</button></div></div><div class="settings-section booth-settings" hidden><div class="frame-picker-heading"><h2>Khung photobooth</h2><span class="frame-selected"></span></div><div class="frame-gallery" role="group" aria-label="Mẫu khung photobooth">${frames.presets.map(p=>`<button class="frame-option" data-studio="frame-style" data-value="${p.id}" aria-label="Khung ${p.name}"><img alt="" src="${frames.preview(p.id,3,'strip','#ffffff',96)}"><span>${p.name}</span></button>`).join('')}</div><div class="small-segments"><button data-studio="count" data-value="2">2 tấm</button><button data-studio="count" data-value="3">3 tấm</button><button data-studio="count" data-value="4">4 tấm</button></div><div class="small-segments"><button data-studio="layout" data-value="strip">Dải dọc</button><button data-studio="layout" data-value="grid">Ngang / Lưới</button></div><div class="frame-colors" aria-label="Màu khung"><button data-studio="frame" data-value="#ffffff" aria-label="Khung trắng" style="background:white"></button><button data-studio="frame" data-value="#161616" aria-label="Khung đen" style="background:#161616"></button><button data-studio="frame" data-value="#dfeaff" aria-label="Khung xanh nhạt" style="background:#dfeaff"></button></div><label class="switch-row live-booth-row">Ghi kèm clip động (Live) <input type="checkbox" id="live-booth" checked></label><div class="frame-custom-tools"></div><p class="setting-hint">Chụp cách nhau 3 giây (tự ghi kèm clip động nếu bật Live), hoặc chọn ảnh có sẵn.</p></div></aside></div></div>`;}
@@ -182,19 +179,9 @@ function update(){
 
  const zoomBar=$('.zoom-bar');
  if(zoomBar){
-  const showZoom=!reviewing&&!!media;
+  const showZoom=zoomHudVisible&&!reviewing&&!!media;
   zoomBar.hidden=!showZoom;
-  if(showZoom){
-   const presets=zoomPresets();
-   const matchPreset=presets.find(p=>Math.abs(p-state.zoom)<0.08);
-   zoomBar.innerHTML=presets.map(p=>{
-    const isAct=matchPreset===p||(!matchPreset&&p===1&&state.zoom>1&&p===presets[1]);
-    const exactAct=Math.abs(p-state.zoom)<0.08;
-    const label=exactAct?formatZoomLabel(state.zoom,true):(!matchPreset&&p===1?formatZoomLabel(state.zoom,true):formatZoomLabel(p,false));
-    const cls=exactAct||(!matchPreset&&p===1)?'zoom-pill active':'zoom-pill';
-    return `<button type="button" class="${cls}" data-studio="zoom" data-value="${p}" ${state.busy?'disabled':''}>${label}</button>`;
-   }).join('');
-  }
+  zoomBar.innerHTML=showZoom?`<span class="zoom-pill active">${formatCurrentZoom(state.zoom)}</span>`:'';
  }
 
  $('#grain').disabled=state.busy||aiBusy||restoring;$('#date-stamp').disabled=state.busy||aiBusy||restoring;$('#live-booth').disabled=state.busy||aiBusy||restoring;
@@ -247,16 +234,14 @@ function update(){
 
 async function rebuild(){if(!root)return;if(state.shots.length<need()){state.output='';state.aiResult='';state.aiApplied='';state.status=state.mode==='booth'&&state.shots.length?`Đã có ${state.shots.length}/${need()} tấm.`:'';update();saveDraft();ensureCamera();return;}const id=++renderId,version=mounted;update();try{const data=await compose(state.shots,state);if(version!==mounted||id!==renderId||!root)return;state.output=data;state.aiResult='';state.aiApplied='';state.status='';update();saveDraft();}catch(e){if(root&&version===mounted&&id===renderId){state.status=e.message;update();}}}
 
-async function findCameraDevice(facing,wantUltraWide){
+async function findRearCameraDevice(wantUltraWide){
  if(!global.navigator?.mediaDevices?.enumerateDevices)return null;
  try{
   const list=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput'&&d.deviceId);
-  const isFront=facing==='user';
-  const sideMatch=d=>isFront?/front|trước|user|truedepth|facetime/i.test(d.label||''):/back|rear|sau|environment/i.test(d.label||'');
   if(wantUltraWide){
-   return list.find(d=>sideMatch(d)&&/ultra\s*wide|siêu\s*rộng|0\.5|center\s*stage/i.test(d.label||''))||(!isFront?list.find(d=>/ultra\s*wide|siêu\s*rộng|0\.5/i.test(d.label||''))||null:null);
+   return list.find(d=>/ultra\s*wide|siêu\s*rộng|0\.5/i.test(d.label||''))||null;
   }
-  return list.find(d=>sideMatch(d)&&!/ultra\s*wide|siêu\s*rộng|telephoto|tele|dual|kép|triple|ba\s*camera/i.test(d.label||''))||null;
+  return list.find(d=>/back|rear|sau|environment/i.test(d.label||'')&&!/ultra\s*wide|siêu\s*rộng|telephoto/i.test(d.label||''))||null;
  }catch{return null;}
 }
 
@@ -293,19 +278,18 @@ async function applyTrackZoom(target){
 }
 
 async function openCameraStream(preferUltraWide=false){
- // Request full 4:3 portrait sensor so 0.5x on front & rear captures widest uncropped field of view
- const resHint={width:{ideal:1440},height:{ideal:1920}};
- if(preferUltraWide){
-  const uw=await findCameraDevice(state.facing,true);
+ const resHint={width:{ideal:1440},height:{ideal:1440}};
+ if(state.facing==='environment'&&preferUltraWide){
+  const uw=await findRearCameraDevice(true);
   if(uw){
    try{const s=await navigator.mediaDevices.getUserMedia({video:{deviceId:{exact:uw.deviceId},...resHint},audio:false});usingUltraWideDevice=true;return s;}catch{}
   }
  }
  usingUltraWideDevice=false;
- if(!preferUltraWide){
-  const mainCam=await findCameraDevice(state.facing,false);
-  if(mainCam){
-   try{return await navigator.mediaDevices.getUserMedia({video:{deviceId:{exact:mainCam.deviceId},...resHint},audio:false});}catch{}
+ if(state.facing==='environment'&&!preferUltraWide){
+  const mainBack=await findRearCameraDevice(false);
+  if(mainBack){
+   try{return await navigator.mediaDevices.getUserMedia({video:{deviceId:{exact:mainBack.deviceId},...resHint},audio:false});}catch{}
   }
  }
  try{return await navigator.mediaDevices.getUserMedia({video:{facingMode:{exact:state.facing},...resHint},audio:false});}
@@ -315,7 +299,7 @@ async function openCameraStream(preferUltraWide=false){
  }
 }
 
-async function start(preferUltraWide=state.zoom<1){
+async function start(preferUltraWide=state.facing==='environment'&&state.zoom<1){
  stop();startingCamera=true;const version=mounted,generation=sequence;state.status='';update();
  try{
   if(!navigator.mediaDevices?.getUserMedia)throw Error();
@@ -338,19 +322,29 @@ async function start(preferUltraWide=state.zoom<1){
  }catch{startingCamera=false;if(version===mounted){state.status='Chưa mở được camera. Cấp quyền camera hoặc chọn ảnh từ thư viện.';update();}}
 }
 
-async function setZoom(nextZoom){
- const clamped=Math.max(0.5,Math.min(4,Math.round(Number(nextZoom)*10)/10||1));
+async function setZoom(nextZoom,showHud=true){
+ const minZ=state.facing==='environment'?0.5:1;
+ const clamped=Math.max(minZ,Math.min(4,Math.round(Number(nextZoom)*10)/10||1));
  state.zoom=clamped;
+ if(showHud)showZoomHud();
  if(!isCameraLive()){update();return;}
- if(clamped<1){
-  const ok=await applyTrackZoom(clamped);
-  if(!ok&&!usingUltraWideDevice){
-   const uw=await findCameraDevice(state.facing,true);
-   if(uw){await start(true);return;}
-   // On front camera without separate ultra-wide deviceId, 0.5x widens seamlessly to full uncropped 23mm sensor (effectiveDigitalZoom = 1.0 vs 1.22 at 1x)
+ if(state.facing==='environment'){
+  if(clamped<1){
+   const ok=await applyTrackZoom(clamped);
+   if(!ok&&!usingUltraWideDevice){
+    if(lensSwitching)return;
+    const uw=await findRearCameraDevice(true);
+    if(uw){lensSwitching=true;try{await start(true);}finally{lensSwitching=false;}if(showHud)showZoomHud();update();return;}
+    state.zoom=1;
+   }
+  }else{
+   if(usingUltraWideDevice){
+    if(lensSwitching)return;
+    lensSwitching=true;try{await start(false);}finally{lensSwitching=false;}if(showHud)showZoomHud();update();return;
+   }
+   await applyTrackZoom(clamped);
   }
  }else{
-  if(usingUltraWideDevice){await start(false);return;}
   await applyTrackZoom(clamped);
  }
  update();
@@ -470,7 +464,7 @@ async function action(e){
   case'frame':state.frame=b.dataset.value;state.frameStyle='classic';await rebuild();break;
   case'files':pickingFileUntil=Date.now()+25000;$('.studio-file-input').click();break;
   case'capture':await capture();break;
-  case'flip':state.facing=state.facing==='user'?'environment':'user';state.zoom=1;await start(false);break;
+  case'flip':hideZoomHud();state.facing=state.facing==='user'?'environment':'user';state.zoom=1;await start(false);break;
   case'reset':clearAfterPost();break;
   case'open-live-booth':if(hasLiveSet()&&callbacks.onLiveBooth){stop();callbacks.onLiveBooth({clips:liveClips.slice(0,need()),count:need(),layout:state.layout,frameStyle:state.frameStyle,frame:state.frame,custom:{...state.custom}});}break;
   case'use':if(activeOutput())callbacks.onUse(activeOutput());break;
@@ -522,22 +516,45 @@ async function loadMemoryShots(images){
 function bindPinchZoom(vf){
  if(!vf?.addEventListener)return;
  const dist=t=>Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].clientY);
- vf.addEventListener('touchstart',e=>{if(e.touches?.length===2&&isCameraLive()){pinchStartDist=dist(e.touches);pinchStartZoom=state.zoom;}},{passive:true});
+ vf.addEventListener('touchstart',e=>{
+  if(e.touches?.length===2&&isCameraLive()){
+   pinchStartDist=dist(e.touches);pinchStartZoom=state.zoom;
+   clearTimeout(zoomHudTimer);zoomHudVisible=true;update();
+  }
+ },{passive:true});
  vf.addEventListener('touchmove',e=>{
-  if(e.touches?.length===2&&pinchStartDist>10&&isCameraLive()&&!state.busy){
+  if(e.touches?.length===2&&pinchStartDist>10&&isCameraLive()&&!state.busy&&!lensSwitching){
    e.preventDefault?.();
    const ratio=dist(e.touches)/pinchStartDist;
-   const next=Math.max(0.5,Math.min(4,Math.round(pinchStartZoom*ratio*10)/10));
-   if(Math.abs(next-state.zoom)>=0.1)setZoom(next);
+   const minZ=state.facing==='environment'?0.5:1;
+   const raw=pinchStartZoom*ratio;
+   const next=state.facing==='environment'&&raw<0.82?0.5:Math.max(state.facing==='environment'&&usingUltraWideDevice&&raw<0.95?0.5:1,Math.min(4,Math.round(Math.max(minZ,raw)*10)/10));
+   clearTimeout(zoomHudTimer);zoomHudVisible=true;
+   if(Math.abs(next-state.zoom)>=0.1)setZoom(next,true);
+   else update();
   }
  },{passive:false});
- vf.addEventListener('touchend',()=>{pinchStartDist=0;},{passive:true});
+ vf.addEventListener('touchend',e=>{
+  if(!e.touches||e.touches.length<2){
+   pinchStartDist=0;
+   if(zoomHudVisible)showZoomHud();
+  }
+ },{passive:true});
+ vf.addEventListener('wheel',e=>{
+  if(!isCameraLive()||state.busy||lensSwitching)return;
+  e.preventDefault?.();
+  const minZ=state.facing==='environment'?0.5:1;
+  const step=e.deltaY<0?0.2:-0.2;
+  const next=state.facing==='environment'&&state.zoom<=1&&step<0?0.5:state.facing==='environment'&&state.zoom<1&&step>0?1:Math.max(minZ,Math.min(4,Math.round((state.zoom+step)*10)/10));
+  setZoom(next,true);
+ },{passive:false});
 }
 
 function onVisibility(){
  if(!root)return;
  const vis=global.document?.visibilityState;
  if(vis==='hidden'){
+  hideZoomHud();
   stop();
   if(Date.now()>pickingFileUntil){
    global.ChamDrafts?.clearAll?.().catch?.(()=>{});
@@ -547,8 +564,8 @@ function onVisibility(){
   ensureCamera();
  }
 }
-function mount(element,options){unmount();root=element;callbacks=options;lastAIUser=null;timerOpen=false;featuresOpen=false;featureTab='digital';state.timer=0;state.flash=false;state.zoom=1;root.innerHTML=markup();bindPinchZoom($('.viewfinder'));global.ChamPhotoEditor.mount($('.photo-edit-tools'),{shots:()=>state.shots,enabled:()=>state.mode==='booth'&&state.retakeIndex===null,changed:()=>rebuild(),replace:replaceShot,retake:retakeShot});global.ChamStudioTools.mount(root,{state:()=>state,scope:()=>draftScope||'device',busy:()=>state.busy||aiBusy||restoring,changed:()=>rebuild(),draft:saveDraft});$('#ai-prompt').value=state.aiPrompt;$('#ai-prompt').addEventListener('input',e=>{state.aiPrompt=e.target.value;saveDraft();});setScope(options.draftScope||'device');root.addEventListener('click',action);global.document?.addEventListener?.('visibilitychange',onVisibility);root.querySelector('.studio-file-input').addEventListener('change',e=>{files(e.target.files);e.target.value='';});root.querySelector('#grain').addEventListener('input',async e=>{state.grain=Number(e.target.value);await rebuild();});root.querySelector('#date-stamp').addEventListener('change',async e=>{state.stamp=e.target.checked;await rebuild();});root.querySelector('#live-booth').addEventListener('change',e=>{state.liveBooth=e.target.checked;saveDraft();});root.querySelectorAll('[data-tone]').forEach(inp=>inp.addEventListener('input',e=>{state.tone=global.ChamEdits.tone({...state.tone,[e.target.dataset.tone]:Number(e.target.value)});update();clearTimeout(toneTimer);toneTimer=setTimeout(()=>rebuild(),120);}));update();}
-function unmount(){if(root&&loadedDraft&&!restoring)global.ChamDrafts?.put('studio:'+draftScope,draftSnapshot()).catch(()=>{});clearTimeout(draftTimer);clearTimeout(toneTimer);scopeEpoch++;restoring=false;timerOpen=false;featuresOpen=false;global.ChamPhotoEditor?.unmount();global.ChamStudioTools?.unmount();stop();aiBusy=false;mounted++;renderId++;global.document?.removeEventListener?.('visibilitychange',onVisibility);if(root){const key=$('#ai-key');if(key)key.value='';root.removeEventListener('click',action);}root=null;callbacks={};}
+function mount(element,options){unmount();root=element;callbacks=options;lastAIUser=null;timerOpen=false;featuresOpen=false;featureTab='digital';hideZoomHud();state.timer=0;state.flash=false;state.zoom=1;root.innerHTML=markup();bindPinchZoom($('.viewfinder'));global.ChamPhotoEditor.mount($('.photo-edit-tools'),{shots:()=>state.shots,enabled:()=>state.mode==='booth'&&state.retakeIndex===null,changed:()=>rebuild(),replace:replaceShot,retake:retakeShot});global.ChamStudioTools.mount(root,{state:()=>state,scope:()=>draftScope||'device',busy:()=>state.busy||aiBusy||restoring,changed:()=>rebuild(),draft:saveDraft});$('#ai-prompt').value=state.aiPrompt;$('#ai-prompt').addEventListener('input',e=>{state.aiPrompt=e.target.value;saveDraft();});setScope(options.draftScope||'device');root.addEventListener('click',action);global.document?.addEventListener?.('visibilitychange',onVisibility);root.querySelector('.studio-file-input').addEventListener('change',e=>{files(e.target.files);e.target.value='';});root.querySelector('#grain').addEventListener('input',async e=>{state.grain=Number(e.target.value);await rebuild();});root.querySelector('#date-stamp').addEventListener('change',async e=>{state.stamp=e.target.checked;await rebuild();});root.querySelector('#live-booth').addEventListener('change',e=>{state.liveBooth=e.target.checked;saveDraft();});root.querySelectorAll('[data-tone]').forEach(inp=>inp.addEventListener('input',e=>{state.tone=global.ChamEdits.tone({...state.tone,[e.target.dataset.tone]:Number(e.target.value)});update();clearTimeout(toneTimer);toneTimer=setTimeout(()=>rebuild(),120);}));update();}
+function unmount(){if(root&&loadedDraft&&!restoring)global.ChamDrafts?.put('studio:'+draftScope,draftSnapshot()).catch(()=>{});clearTimeout(draftTimer);clearTimeout(toneTimer);hideZoomHud();scopeEpoch++;restoring=false;timerOpen=false;featuresOpen=false;global.ChamPhotoEditor?.unmount();global.ChamStudioTools?.unmount();stop();aiBusy=false;mounted++;renderId++;global.document?.removeEventListener?.('visibilitychange',onVisibility);if(root){const key=$('#ai-key');if(key)key.value='';root.removeEventListener('click',action);}root=null;callbacks={};}
 async function refreshAI(user=''){if(!root||user===lastAIUser)return;lastAIUser=user;const version=mounted;try{const result=await callbacks.onAIStatus();if(root&&version===mounted&&lastAIUser===user){aiState=result;update();}}catch(e){if(root&&version===mounted&&lastAIUser===user){aiState={available:false,reason:e.message};update();}}}
 global.ChamStudio={mount,unmount,refreshAI,setScope,loadMemoryShots,ensureCamera,clearAfterPost,setMode:mode=>{if(['photo','digital','booth'].includes(mode)){state.mode=mode==='booth'?'booth':'photo';if(mode==='digital'&&state.look==='natural'){state.look='ccd';state.grain=10;state.stamp=true;}if(root)rebuild();}},testing:{geometry,dateStamp,pixels,cover,looks}};
 })(typeof window!=='undefined'?window:globalThis);

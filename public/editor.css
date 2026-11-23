@@ -81,22 +81,17 @@
 .features-trigger.has-active:not(.open){border-color:var(--gold);color:var(--gold);box-shadow:0 0 0 1px rgba(255,200,61,.35)}
 
 .zoom-bar{
-  position:absolute;bottom:14px;left:50%;transform:translateX(-50%);
-  display:flex;align-items:center;gap:5px;padding:4px;
-  background:rgba(12,12,16,.62);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
-  border:1px solid rgba(255,255,255,.14);border-radius:999px;
-  z-index:5;pointer-events:auto;
+  position:absolute;bottom:16px;left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;justify-content:center;
+  padding:5px 13px;
+  background:rgba(12,12,16,.68);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  border:1px solid rgba(255,200,61,.38);border-radius:999px;
+  z-index:5;pointer-events:none;
 }
 .zoom-pill{
-  min-width:32px;height:32px;padding:0 8px;border-radius:999px;
-  background:transparent;color:rgba(255,255,255,.85);
-  font-size:11px;font-weight:700;letter-spacing:-.2px;
-  display:inline-flex;align-items:center;justify-content:center;
-  transition:transform .14s,background .14s,color .14s;
-}
-.zoom-pill.active{
-  background:rgba(255,255,255,.16);color:var(--gold);
-  transform:scale(1.06);box-shadow:0 2px 8px rgba(0,0,0,.35);
+  color:var(--gold);
+  font-size:13px;font-weight:700;letter-spacing:-.2px;
+  line-height:1;
 }
 .retina-screen-flash{
   position:fixed;inset:0;z-index:9999;
