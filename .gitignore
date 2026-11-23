@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.vercel/
+.openai/
+.env
+.env.*
+!.env.example
+*.log
+*.zip
+*.tar.gz
+
+.local-server.*
+ios-build/node_modules/
+ios-build/www/
+ios-build/ios/
+*.ipa

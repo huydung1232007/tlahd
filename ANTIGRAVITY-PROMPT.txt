@@ -1,0 +1,9 @@
+Tôi bàn giao dự án Chạm trong workspace này để bạn tiếp tục phụ trách.
+
+Hãy đọc AGENTS.md và HANDOFF-ANTIGRAVITY.md trước, rồi kiểm tra package.json cùng các entrypoint thực tế. Đây là web Locket local v0.7.1, JavaScript thuần + Node 22, có photobooth/frame, video FFmpeg và chỉnh ảnh Google Gemini. Giữ thiết kế tối giản theo cảm hứng Apple và giao diện tiếng Việt.
+
+Trong lượt tiếp nhận này, hãy chạy npm run check, npm test và npm run build, rồi báo ngắn gọn: đã tiếp nhận những gì, kết quả kiểm tra thực tế, giới hạn còn lại. Baseline là 55 tests đạt; nếu có lỗi môi trường FFmpeg thì nói rõ, không sửa tests để che lỗi.
+
+Hiện chưa có yêu cầu tính năng mới. Chỉ làm local; chưa push GitHub, deploy, đổi framework hoặc xây IPA. Không gọi tạo ảnh trả phí, đăng bài thật lên Locket hoặc đọc bí mật từ thư mục khác. Cấu hình mẫu ở .env.example; giá trị thật không nằm trong bản bàn giao. Nếu cần preview, dùng cổng 4175 để không đụng app đang chạy của tôi ở 4173.
+
+Hãy xác nhận đã hiểu dự án bằng tiếng Việt và chờ yêu cầu tiếp theo sau khi hoàn tất kiểm tra.
