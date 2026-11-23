@@ -121,13 +121,18 @@ test('Studio camera auto-starts on mount, collapses timer by default, removes he
   context.ChamStudio.mount(root,{draftScope:'u-cam',onUse(){},onAI:async()=>({}),onAIStatus:async()=>({available:false,reason:''})});
   await new Promise(r=>setTimeout(r,20));
 
-  // 1. Header & draft status clutter removed
+  // 1. Header & draft status clutter removed, and Digital is inside Photo (not a separate top tab)
   assert.doesNotMatch(root.innerHTML,/Chụp một chút|Xử lý trên thiết bị|Nháp tự lưu trên thiết bị/);
-  // 2. Camera automatically turned on upon mount
+  assert.doesNotMatch(root.innerHTML,/data-studio="mode" data-value="digital"/);
+  // 2. Camera automatically turned on upon mount without forcing 1920x1080 landscape
   assert.equal(cameraCalls,1,'camera must auto-start on mount');
   // 3. Review icon dock order: reset (X) -> use (Send center) -> download (Download right)
   assert.match(root.innerHTML,/class="review-actions"[^>]*>[\s\S]*data-studio="reset"[\s\S]*data-studio="use"[\s\S]*data-studio="download"/);
-  // 4. Timer collapsed by default (0 = off), expands on toggle-timer, collapses on selection
+  // 4. Features drawer (Digital Cam, Ánh sáng & độ ấm, Chỉnh bằng AI) is hidden by default until icon button is tapped
+  assert.equal(root.querySelector('.studio-features-panel').hidden,true);
+  for(const fn of root.listeners.click)await fn({target:{closest:sel=>sel==='[data-studio]'?{dataset:{studio:'toggle-features'}}:null}});
+  assert.equal(root.querySelector('.studio-features-panel').hidden,false);
+  // 5. Timer collapsed by default (0 = off), expands on toggle-timer, collapses on selection
   assert.equal(root.querySelector('.timer-popover').hidden,true);
   assert.equal(root.querySelector('.timer-badge').textContent,'');
   for(const fn of root.listeners.click)await fn({target:{closest:sel=>sel==='[data-studio]'?{dataset:{studio:'toggle-timer'}}:null}});
@@ -135,4 +140,7 @@ test('Studio camera auto-starts on mount, collapses timer by default, removes he
   for(const fn of root.listeners.click)await fn({target:{closest:sel=>sel==='[data-studio]'?{dataset:{studio:'timer',value:'3'}}:null}});
   assert.equal(root.querySelector('.timer-popover').hidden,true);
   assert.equal(root.querySelector('.timer-badge').textContent,'3s');
+  // 6. clearAfterPost wipes Studio state cleanly
+  context.ChamStudio.clearAfterPost();
+  assert.equal(store.has('studio:u-cam'),false);
 });

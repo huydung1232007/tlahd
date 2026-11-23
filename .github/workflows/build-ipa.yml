@@ -45,6 +45,13 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryAddUsageDescription string 'Chạm cần quyền lưu ảnh và video Photobooth về máy.'" "$PLIST" || true
           /usr/libexec/PlistBuddy -c "Add :UIStatusBarStyle string UIStatusBarStyleLightContent" "$PLIST" || true
           /usr/libexec/PlistBuddy -c "Add :UIViewControllerBasedStatusBarAppearance bool false" "$PLIST" || true
+          # Khóa chặt hướng dọc (Portrait) như app Locket gốc để camera dọc không bị xoay ngang lỗi khung
+          /usr/libexec/PlistBuddy -c "Delete :UISupportedInterfaceOrientations" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations array" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations:0 string UIInterfaceOrientationPortrait" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Delete :UISupportedInterfaceOrientations~ipad" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations~ipad array" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations~ipad:0 string UIInterfaceOrientationPortrait" "$PLIST"
 
           # Chuyển icon.svg sang PNG 1024x1024 cho màn hình chính iPhone
           qlmanage -t -s 1024 -o /tmp ../public/icon.svg || true

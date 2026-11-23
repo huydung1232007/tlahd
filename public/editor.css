@@ -65,17 +65,20 @@
 .motion-frame-colors{margin:-2px 0 14px}
 .modal-media-actions{margin-top:14px;display:flex}.modal-media-actions .secondary{font-size:12px;padding:8px 15px;min-height:36px}
 
+.camera-quick-tools{display:flex;align-items:center;gap:8px;pointer-events:auto}
 .timer-control{position:relative;display:flex;align-items:center;gap:6px;pointer-events:auto}
-.timer-trigger{
+.timer-trigger,.features-trigger{
   display:inline-flex;align-items:center;justify-content:center;gap:5px;
-  min-width:34px;height:34px;padding:0 9px;border-radius:999px;
-  background:rgba(14,14,20,.65);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-  border:1px solid rgba(255,255,255,.14);color:#f2f2f7;font-size:11px;font-weight:650;
-  transition:background .15s,border-color .15s,color .15s;
+  min-width:36px;height:36px;padding:0 10px;border-radius:999px;
+  background:rgba(14,14,20,.68);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border:1px solid rgba(255,255,255,.15);color:#f2f2f7;font-size:11px;font-weight:650;
+  transition:background .15s,border-color .15s,color .15s,transform .12s;
 }
-.timer-trigger svg{width:16px;height:16px}
+.features-trigger{padding:0;width:36px}
+.timer-trigger svg,.features-trigger svg{width:17px;height:17px}
 .timer-trigger .timer-badge:empty{display:none}
-.timer-trigger.has-timer,.timer-trigger.open{background:var(--gold);border-color:var(--gold);color:#121216}
+.timer-trigger.has-timer,.timer-trigger.open,.features-trigger.open{background:var(--gold);border-color:var(--gold);color:#121216}
+.features-trigger.has-active:not(.open){border-color:var(--gold);color:var(--gold);box-shadow:0 0 0 1px rgba(255,200,61,.35)}
 .timer-popover{
   position:absolute;top:calc(100% + 7px);right:0;
   display:flex;align-items:center;gap:3px;padding:4px;
@@ -85,6 +88,16 @@
 }
 .timer-popover button{background:none;border-radius:999px;padding:6px 11px;font-size:12px;color:var(--muted);font-weight:600;white-space:nowrap}
 .timer-popover button.active{background:var(--gold);color:#121216;font-weight:700}
+
+.features-panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:16px}
+.features-tabs{display:flex;flex:1;gap:3px;padding:3px;background:#0e0e13;border:1px solid var(--line);border-radius:999px;overflow-x:auto;scrollbar-width:none}
+.features-tabs button{flex:1;padding:7px 10px;border-radius:999px;background:none;font-size:12px;font-weight:580;color:var(--muted);white-space:nowrap}
+.features-tabs button.active{background:var(--gold);color:#121216;font-weight:680}
+.features-close{width:32px;height:32px;flex-shrink:0}
+.features-close svg{width:15px;height:15px}
+.feature-subhead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;font-size:12px;color:var(--muted);font-weight:600}
+.digital-extras{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.feature-pane-tone input[type=range]{margin:6px 0 14px}
 .video-pick-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px}
 
 .tone-disclosure{margin-top:0;background:transparent;border:0;padding:0}
