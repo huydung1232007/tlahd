@@ -85,3 +85,54 @@ test('AI chips fill prompt, memory shots import into 2-4 booth, and Live Photobo
   assert.equal(store.get('studio:u1').count,2);
   assert.equal(store.get('studio:u1').shots.length,2);
 });
+
+test('Studio camera auto-starts on mount, collapses timer by default, removes header clutter, and orders review icons X - Send - Download',async()=>{
+  const makeEl=(tag='div')=>{
+    const sub=new Map();
+    return{
+      tagName:tag.toUpperCase(),innerHTML:'',textContent:'',value:'',src:'',srcObject:null,hidden:false,disabled:false,checked:false,
+      dataset:{},style:{},attributes:{},listeners:{},children:[],
+      width:604,height:453,naturalWidth:604,naturalHeight:453,videoWidth:1280,videoHeight:720,
+      classList:{set:new Set(),add(...c){c.forEach(x=>this.set.add(x));},remove(...c){c.forEach(x=>this.set.delete(x));},toggle(c,f){const on=f===undefined?!this.set.has(c):!!f;on?this.set.add(c):this.set.delete(c);return on;},contains(c){return this.set.has(c);}},
+      querySelector(sel){if(!sub.has(sel))sub.set(sel,makeEl(sel));return sub.get(sel);},
+      querySelectorAll(){return[];},
+      closest(){return makeEl('label');},
+      setAttribute(k,v){this.attributes[k]=String(v);},removeAttribute(k){delete this.attributes[k];},
+      addEventListener(k,fn){(this.listeners[k]||(this.listeners[k]=[])).push(fn);},
+      removeEventListener(){},replaceChildren(){this.children=[];},append(c){this.children.push(c);},
+      play:async()=>{},pause(){},load(){},
+      getContext(){return{save(){},restore(){},translate(){},scale(){},rotate(){},beginPath(){},closePath(){},moveTo(){},lineTo(){},bezierCurveTo(){},quadraticCurveTo(){},arc(){},ellipse(){},rect(){},clip(){},fill(){},stroke(){},fillRect(){},strokeRect(){},clearRect(){},setLineDash(){},fillText(){},drawImage(){},getImageData:(_,__,w,h)=>({data:new Uint8ClampedArray(w*h*4)}),putImageData(){},createLinearGradient:()=>({addColorStop(){}}),createRadialGradient:()=>({addColorStop(){}})};},
+      toDataURL(type='image/webp'){return `data:${type};base64,UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAAQAcJaQAA3AA/vuUAAA=`;}
+    };
+  };
+  let cameraCalls=0;
+  const mockStream={getTracks:()=>[{stop(){}}],getVideoTracks:()=>[{readyState:'live'}]};
+  const store=new Map(),prefs=new Map(),root=makeEl('div');
+  const context=vm.createContext({
+    console,
+    navigator:{mediaDevices:{getUserMedia:async()=>{cameraCalls++;return mockStream;}}},
+    setTimeout:(fn)=>{fn();return 1;},clearTimeout(){},
+    document:{activeElement:null,visibilityState:'visible',addEventListener(){},removeEventListener(){},createElement:tag=>makeEl(tag)},
+    ChamDrafts:{async get(k){return store.get(k)??null;},async put(k,v){store.set(k,v);},async remove(k){store.delete(k);},readPreference:(k,fb)=>prefs.get(k)??fb,writePreference:(k,v)=>{prefs.set(k,v);return true;}}
+  });
+  for(const file of ['edit-core.js','frames.js','photo-editor.js','studio-tools.js','studio.js']){
+    vm.runInContext(await readFile(new URL('../public/'+file,import.meta.url),'utf8'),context);
+  }
+  context.ChamStudio.mount(root,{draftScope:'u-cam',onUse(){},onAI:async()=>({}),onAIStatus:async()=>({available:false,reason:''})});
+  await new Promise(r=>setTimeout(r,20));
+
+  // 1. Header & draft status clutter removed
+  assert.doesNotMatch(root.innerHTML,/Chụp một chút|Xử lý trên thiết bị|Nháp tự lưu trên thiết bị/);
+  // 2. Camera automatically turned on upon mount
+  assert.equal(cameraCalls,1,'camera must auto-start on mount');
+  // 3. Review icon dock order: reset (X) -> use (Send center) -> download (Download right)
+  assert.match(root.innerHTML,/class="review-actions"[^>]*>[\s\S]*data-studio="reset"[\s\S]*data-studio="use"[\s\S]*data-studio="download"/);
+  // 4. Timer collapsed by default (0 = off), expands on toggle-timer, collapses on selection
+  assert.equal(root.querySelector('.timer-popover').hidden,true);
+  assert.equal(root.querySelector('.timer-badge').textContent,'');
+  for(const fn of root.listeners.click)await fn({target:{closest:sel=>sel==='[data-studio]'?{dataset:{studio:'toggle-timer'}}:null}});
+  assert.equal(root.querySelector('.timer-popover').hidden,false);
+  for(const fn of root.listeners.click)await fn({target:{closest:sel=>sel==='[data-studio]'?{dataset:{studio:'timer',value:'3'}}:null}});
+  assert.equal(root.querySelector('.timer-popover').hidden,true);
+  assert.equal(root.querySelector('.timer-badge').textContent,'3s');
+});
