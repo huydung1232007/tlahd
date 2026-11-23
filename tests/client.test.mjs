@@ -65,20 +65,24 @@ test('friend filter dropdown toggles menu, highlights active selection, and rend
   assert.ok(!c.html().includes('friend-dropdown-menu'));
   assert.match(c.html(),/friend-filter-label">First</);
 });
-test('detail modal supports continuous next/prev navigation, multi-emoji reactions, and viewing who reacted',async()=>{
-  const postedBodies=[];
+test('detail modal renders Locket-style viewer with reply message bar, continuous navigation, multi-emoji reactions, and who reacted',async()=>{
+  const postedBodies=[],replies=[];
   const c=client((path,opts)=>{
     if(path==='/api/reaction'){postedBodies.push(JSON.parse(opts.body));return ok({ok:true,emoji:'🔥'});}
+    if(path==='/api/reply'){replies.push(JSON.parse(opts.body));return ok({ok:true});}
     if(path.startsWith('/api/reactions?id=mine-1'))return ok({reactions:[{user:'friend-1',emoji:'😍',time:Date.now()}]});
     return ok({reactions:[]});
   });
   c.run('timelineFor().items=[{id:"p-1",author:"friend-1",caption:"Tấm 1",image:"https://example.com/1.webp",time:Date.now()},{id:"p-2",author:"friend-2",caption:"Tấm 2",image:"https://example.com/2.webp",time:Date.now()-60000}];timelineFor().loaded=true;render();');
   await c.click({action:'detail',id:'p-1'});
   assert.match(c.element('#modal-content').innerHTML,/1 \/ 2/);
-  assert.match(c.element('#modal-content').innerHTML,/emoji-reaction-bar/);
+  assert.match(c.element('#modal-content').innerHTML,/lv-caption-pill">Tấm 1</);
+  assert.match(c.element('#modal-content').innerHTML,/moment-reply-input/);
+  await c.click({action:'toggle-more-emojis'});
+  assert.match(c.element('#modal-content').innerHTML,/lv-emoji-popover/);
   await c.click({action:'react',id:'p-1',emoji:'🔥'});
   assert.deepEqual(postedBodies,[{id:'p-1',emoji:'🔥'}]);
-  assert.match(c.element('#modal-content').innerHTML,/emoji-react-btn active[^>]*data-emoji="🔥"/);
+  assert.match(c.element('#modal-content').innerHTML,/lv-reacted-badge[^>]*>🔥/);
   await c.click({action:'detail-nav',id:'p-2'});
   assert.match(c.element('#modal-content').innerHTML,/2 \/ 2/);
   assert.match(c.element('#modal-content').innerHTML,/Tấm 2/);

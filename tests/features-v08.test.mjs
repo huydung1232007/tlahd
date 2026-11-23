@@ -108,8 +108,9 @@ test('Studio camera auto-starts on mount, collapses timer by default, removes he
   let cameraCalls=0;
   const mockStream={getTracks:()=>[{stop(){}}],getVideoTracks:()=>[{readyState:'live'}]};
   const store=new Map(),prefs=new Map(),root=makeEl('div');
+  class FakeImg{set src(v){this._src=v;this.naturalWidth=604;this.naturalHeight=453;this.width=604;this.height=453;queueMicrotask(()=>this.onload?.());}}
   const context=vm.createContext({
-    console,
+    console,Image:FakeImg,
     navigator:{mediaDevices:{getUserMedia:async()=>{cameraCalls++;return mockStream;}}},
     setTimeout:(fn)=>{fn();return 1;},clearTimeout(){},
     document:{activeElement:null,visibilityState:'visible',addEventListener(){},removeEventListener(){},createElement:tag=>makeEl(tag)},
@@ -153,16 +154,24 @@ test('Studio camera auto-starts on mount, collapses timer by default, removes he
   assert.equal(root.querySelector('.zoom-bar').innerHTML,'<span class="zoom-pill active">2×</span>','shows only current x value');
   timers.pop()?.();
   assert.equal(root.querySelector('.zoom-bar').hidden,true,'zoom HUD disappears after 3s');
-  // 7. Grid 3x3, Dual Cam toggle, and Double-tap viewfinder camera flip
+  // 7. Grid 3x3, live Canvas viewfinder, Dual Cam end-to-end capture, and Double-tap camera flip
+  assert.equal(root.querySelector('.camera-canvas').hidden,false,'live camera renders onto canvas without WebKit video controls');
   assert.equal(root.querySelector('.viewfinder-grid').hidden,true);
   for(const fn of root.listeners.click)await fn({target:{closest:sel=>sel==='[data-studio]'?{dataset:{studio:'toggle-grid'}}:null}});
   assert.equal(root.querySelector('.viewfinder-grid').hidden,false);
-  for(const fn of root.listeners.click)await fn({target:{closest:sel=>sel==='[data-studio]'?{dataset:{studio:'toggle-dual'}}:null}});
-  assert.equal(root.querySelector('.mode-label').textContent,'DUAL CAM');
   const callsBeforeFlip=cameraCalls;
   const vfEl=root.querySelector('.viewfinder');
   for(const fn of vfEl.listeners.dblclick||[])await fn({target:{closest:()=>null}});
   assert.ok(cameraCalls>callsBeforeFlip,'double-tapping viewfinder flips camera stream');
+
+  for(const fn of root.listeners.click)await fn({target:{closest:sel=>sel==='[data-studio]'?{dataset:{studio:'toggle-dual'}}:null}});
+  assert.equal(root.querySelector('.mode-label').textContent,'DUAL CAM');
+  const callsBeforeDual=cameraCalls;
+  for(const fn of root.listeners.click)await fn({target:{closest:sel=>sel==='[data-studio]'?{dataset:{studio:'capture'}}:null}});
+  assert.equal(cameraCalls,callsBeforeDual+1,'Dual Cam opens opposite camera stream once and finishes');
+  assert.equal(root.querySelector('.studio-result').hidden,false,'Dual Cam must produce merged output image');
+  assert.equal(root.querySelector('.review-actions').hidden,false,'Dual Cam must enter review actions dock');
+
   // 8. clearAfterPost wipes Studio state cleanly
   context.ChamStudio.clearAfterPost();
   assert.equal(store.has('studio:u-cam'),false);

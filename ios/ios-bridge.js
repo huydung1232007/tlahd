@@ -90,7 +90,7 @@ const analytics=s=>({ios_version:'2.68.0.2523',installation_id:s.installation,pl
 const safeUrl=v=>{try{const u=new URL(v);return u.protocol==='https:'?u.href:'';}catch{return '';}};
 const stamp=d=>{if(typeof d==='object'&&d)return Number(d._seconds??d.seconds??0)*1000;const n=Number(d);return Number.isFinite(n)&&n>0?(n<1e12?n*1000:n):Date.parse(d)||Date.now();};
 const normProfile=(raw,uid)=>{const p=raw?.user||raw||{};return{id:uid||p.uid||p.user_uid,name:[p.first_name,p.last_name].filter(Boolean).join(' ')||p.username||'Bạn',username:String(p.username||''),image:safeUrl(p.profile_picture_url||p.profile_picture||p.avatar_url||''),email:String(p.email||'')};};
-const REACTION_EMOJIS=['❤️','🔥','😂','😍','🥺','👏'];
+const REACTION_EMOJIS=['❤️','💛','🔥','😭','😂','😍','🥺','👏','🫶','👍'];
 function parseInlineReactions(raw){
  if(!raw)return[];
  const items=Array.isArray(raw)?raw:typeof raw==='object'?Object.entries(raw).map(([k,v])=>typeof v==='object'&&v?{user:k,...v}:{user:k,value:v}):[];
@@ -334,6 +334,7 @@ async function handleApi(url,init={}){
   }
   if(path==='/api/reactions')return jsonResp(await fetchMomentReactions(s,u.searchParams.get('id')||''));
   if(path==='/api/reaction'){const emoji=REACTION_EMOJIS.includes(body.emoji)?body.emoji:'❤️';await callLocket(s,'reactToMoment',{moment_uid:String(body.id||''),reaction:emoji,from_memory:false,intensity:{'@type':'type.googleapis.com/google.protobuf.Int64Value',value:'0'}});return jsonResp({ok:true,emoji});}
+  if(path==='/api/reply'){const id=String(body.id||'').trim(),to=String(body.to||'').trim(),msg=String(body.message||'').trim();if(!id||!to||!msg||msg.length>300)throw new ApiError(400,'Nhập tin nhắn trả lời tối đa 300 ký tự.','INVALID_INPUT');await callLocket(s,'sendChatMessageV2',{receiver_uid:to,moment_uid:id,msg,client_token:crypto.randomUUID().toUpperCase(),from_memory:false});return jsonResp({ok:true});}
   throw new ApiError(404,'Không tìm thấy chức năng.','NOT_FOUND');
  }catch(e){
   return jsonResp({error:{code:e instanceof ApiError?e.code:'SERVER_ERROR',message:e.message||'Đã xảy ra lỗi trên iPhone.'}},e instanceof ApiError?e.status:500);
