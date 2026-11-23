@@ -6,7 +6,7 @@ import {join,resolve,dirname,basename} from 'node:path';
 export const VIDEO_INPUT_LIMIT=40*1024*1024;
 export const VIDEO_OUTPUT_LIMIT=6*1024*1024-1;
 export class VideoError extends Error{constructor(status,message){super(message);this.status=status;}}
-export function mp4Header(bytes){return bytes.length>=16&&Buffer.from(bytes.subarray(4,8)).toString()==='ftyp';}
+export function mp4Header(bytes){return bytes.length>=12&&['ftyp','moov','wide','mdat','free'].includes(Buffer.from(bytes.subarray(4,8)).toString());}
 export function webmHeader(bytes){return bytes.length>=4&&bytes[0]===0x1a&&bytes[1]===0x45&&bytes[2]===0xdf&&bytes[3]===0xa3;}
 export function clipHeader(bytes){return mp4Header(bytes)||webmHeader(bytes);}
 function run(command,args,timeout=90000){return new Promise((resolve,reject)=>{
@@ -76,7 +76,7 @@ export async function handleVideoLocal(request){
   if(!['/api/video/prepare','/api/video/booth'].includes(url.pathname))return null;
   if(request.method!=='POST')return Response.json({error:{message:'Phương thức không hợp lệ.'}},{status:405});
   if(request.headers.get('Origin')!==url.origin||request.headers.get('Sec-Fetch-Site')==='cross-site')return Response.json({error:{message:'Yêu cầu không hợp lệ.'}},{status:403});
-  if(url.pathname==='/api/video/prepare'&&request.headers.get('Content-Type')?.split(';')[0]!=='video/mp4')return Response.json({error:{message:'Chọn một video MP4.'}},{status:415});
+  if(url.pathname==='/api/video/prepare'&&!request.headers.get('Content-Type')?.startsWith('video/'))return Response.json({error:{message:'Chọn một tệp video hợp lệ.'}},{status:415});
   if(processing)return Response.json({error:{message:'Một video khác đang được xử lý. Hãy thử lại sau.'}},{status:429});
   processing=true;
   try{if(Number(request.headers.get('content-length'))>VIDEO_INPUT_LIMIT+1024*1024)throw new VideoError(413,'Tổng video cần nhỏ hơn 40 MB.');let data;if(url.pathname==='/api/video/booth'){if(!request.headers.get('Content-Type')?.startsWith('multipart/form-data'))throw new VideoError(415,'Chưa nhận được các clip photobooth.');const form=await request.formData(),files=form.getAll('clips'),frame=form.get('frame');if(![2,3,4].includes(files.length)||!frame?.arrayBuffer||files.some(f=>!f.arrayBuffer))throw new VideoError(400,'Chọn từ 2 đến 4 clip và khung.');let slots;try{slots=JSON.parse(String(form.get('slots')));}catch{throw new VideoError(400,'Các ô video chưa hợp lệ.');}data=await prepareBooth(await Promise.all(files.map(async f=>Buffer.from(await f.arrayBuffer()))),Buffer.from(await frame.arrayBuffer()),slots,{duration:Number(form.get('duration')),audio:Number(form.get('audio')),live:form.get('live')==='1'});}else data=await prepareVideo(Buffer.from(await request.arrayBuffer()),Object.fromEntries(url.searchParams));return Response.json(data,{headers:{'Cache-Control':'no-store'}});}

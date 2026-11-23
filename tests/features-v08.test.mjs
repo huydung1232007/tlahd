@@ -165,12 +165,25 @@ test('Studio camera auto-starts on mount, collapses timer by default, removes he
   assert.ok(cameraCalls>callsBeforeFlip,'double-tapping viewfinder flips camera stream');
 
   for(const fn of root.listeners.click)await fn({target:{closest:sel=>sel==='[data-studio]'?{dataset:{studio:'toggle-dual'}}:null}});
-  assert.equal(root.querySelector('.mode-label').textContent,'DUAL CAM');
+  assert.equal(root.querySelector('.mode-label').textContent,'DUAL CAM · 1/2');
   const callsBeforeDual=cameraCalls;
+  // Step 1: Manual tap captures 1st camera and switches to 2nd camera without auto-shooting
   for(const fn of root.listeners.click)await fn({target:{closest:sel=>sel==='[data-studio]'?{dataset:{studio:'capture'}}:null}});
-  assert.equal(cameraCalls,callsBeforeDual+1,'Dual Cam opens opposite camera stream once and finishes');
-  assert.equal(root.querySelector('.studio-result').hidden,false,'Dual Cam must produce merged output image');
-  assert.equal(root.querySelector('.review-actions').hidden,false,'Dual Cam must enter review actions dock');
+  assert.equal(cameraCalls,callsBeforeDual+1,'Dual Cam step 1 flips to opposite lens and waits for manual shot 2');
+  assert.equal(root.querySelector('.mode-label').textContent,'DUAL CAM · 2/2');
+  assert.equal(root.querySelector('.dual-pending-thumb').hidden,false);
+  assert.equal(root.querySelector('.review-actions').hidden,true);
+  // Step 2: Manual tap captures 2nd camera and enters interactive draggable PiP review
+  for(const fn of root.listeners.click)await fn({target:{closest:sel=>sel==='[data-studio]'?{dataset:{studio:'capture'}}:null}});
+  assert.equal(root.querySelector('.studio-result').hidden,false,'Dual Cam step 2 shows main image');
+  assert.equal(root.querySelector('.dual-pip-drag').hidden,false,'Dual Cam step 2 shows draggable PiP overlay');
+  assert.equal(root.querySelector('.review-actions').hidden,false,'Dual Cam enters review actions dock');
+  // Dragging PiP updates its position cleanly
+  const pipDragEl=root.querySelector('.dual-pip-drag');
+  for(const fn of pipDragEl.listeners.pointerdown||[])fn({clientX:20,clientY:20,stopPropagation(){}});
+  for(const fn of pipDragEl.listeners.pointermove||[])fn({clientX:180,clientY:150,preventDefault(){}});
+  for(const fn of pipDragEl.listeners.pointerup||[])await fn();
+  assert.notEqual(pipDragEl.style.left,'4.950%','dragging PiP updates horizontal position');
 
   // 8. clearAfterPost wipes Studio state cleanly
   context.ChamStudio.clearAfterPost();

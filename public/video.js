@@ -8,15 +8,21 @@
  const validColor=v=>/^#[a-f0-9]{6}$/i.test(v||'')?v:'#ffffff';
  function resetKindSettings(target=kind){if(target==='single')edit={start:0,end:0,cover:0,mute:false};else booth={duration:3,audio:-1,layout:'grid',frameStyle:'love',frame:'#ffffff',live:false,custom:{title:'',message:'',date:'',paper:'',ink:''}};postMeta={overlayStyle:'standard',recipients:[]};}
  function resetSettings(){kind='single';resetKindSettings('single');resetKindSettings('booth');byKind={single:null,booth:null};}
- function validateFile(file,allowWebm=false){
-  if(!file||!Number.isFinite(file.size)||file.size<=0)throw Error('Chọn video MP4.');
-  if(file.size>40*1024*1024)throw Error('Video cần nhỏ hơn 40 MB.');
-  if(allowWebm&&(/\.webm$/i.test(file.name)||file.type?.startsWith('video/webm')))return;
-  if(!/\.mp4$/i.test(file.name)||file.type&&!file.type.startsWith('video/mp4'))throw Error('Chọn MP4. Bạn có thể xuất lại video sang MP4 rồi chọn.');
+ const maxInputBytes=()=>(global.Capacitor?.isNativePlatform?.()?160:40)*1024*1024;
+ function validateFile(file){
+  const limit=maxInputBytes(),limitMb=Math.round(limit/1048576);
+  if(!file||!Number.isFinite(file.size)||file.size<=0)throw Error('Chọn video từ thư viện máy.');
+  if(file.size>limit)throw Error(`Video cần nhỏ hơn ${limitMb} MB.`);
+  const okExt=/\.(mp4|mov|m4v|webm|3gp)$/i.test(file.name||'');
+  const okMime=file.type&&file.type.startsWith('video/');
+  if(!okExt&&!okMime)throw Error('Chọn tệp video hợp lệ (MOV, MP4, M4V hoặc WebM).');
  }
- function validClipHead(head,allowWebm=false){
-  if(head.length>=16&&String.fromCharCode(...head.slice(4,8))==='ftyp')return true;
-  if(allowWebm&&head.length>=4&&head[0]===0x1a&&head[1]===0x45&&head[2]===0xdf&&head[3]===0xa3)return true;
+ function validClipHead(head){
+  if(head.length>=8){
+   const box=String.fromCharCode(...head.slice(4,8));
+   if(['ftyp','moov','wide','mdat','free','skip','pnot'].includes(box))return true;
+  }
+  if(head.length>=4&&head[0]===0x1a&&head[1]===0x45&&head[2]===0xdf&&head[3]===0xa3)return true;
   return false;
  }
  function blob(data,type){return new Blob([Uint8Array.from(atob(data.split(',')[1]),c=>c.charCodeAt(0))],{type});}
@@ -42,7 +48,7 @@
   }
  }
  function update(){if(!root)return;
-  $('.video-pick').disabled=busy||sending||!available;$('.video-pick').textContent=kind==='booth'?'Chọn 2–4 clip MP4/WebM':'Chọn video MP4';$('.video-input').multiple=kind==='booth';$('.video-input').accept=kind==='booth'?'video/mp4,video/webm,.mp4,.webm':'video/mp4,.mp4';
+  $('.video-pick').disabled=busy||sending||!available;$('.video-pick').textContent=kind==='booth'?'Chọn 2–4 video từ máy':'Chọn video từ thư viện';$('.video-input').multiple=kind==='booth';$('.video-input').accept='video/*,.mp4,.mov,.m4v,.webm';
   $('.video-upload').disabled=!prepared||dirty||sending||posted;$('.video-download').disabled=!prepared||dirty||sending;$('.video-reset').disabled=sending;$('.video-actions').hidden=!prepared;$('.video-post-fields').hidden=!records.length;$('.video-edit-panel').hidden=!records.length;$('.single-video-editor').hidden=kind!=='single';$('.motion-video-editor').hidden=kind!=='booth';
   root.querySelectorAll('[data-video-back],.video-post-fields input,.video-post-fields textarea,[data-video-kind],[data-motion-color],[data-video-overlay],[data-video-recipient],.video-edit-panel input,.video-edit-panel select').forEach(b=>b.disabled=sending||busy);
   root.querySelectorAll('[data-video-kind]').forEach(b=>{b.classList.toggle('active',b.dataset.videoKind===kind);b.setAttribute('aria-pressed',String(b.dataset.videoKind===kind));});
@@ -92,10 +98,12 @@
  async function chooseFiles(files){
   if(!root||sending||!files.length)return;const token=++revision;restoring=false;controller?.abort();prepared=null;dirty=true;posted=false;busy=true;records=[];detachPlayer();update();
   try{
-   const allowWebm=kind==='booth',selected=allowWebm?[...files].slice(0,4):[files[0]];
-   if(allowWebm&&![2,3,4].includes(selected.length))throw Error('Chọn 2, 3 hoặc 4 clip cùng lúc để tạo photobooth động.');
-   if(selected.reduce((n,f)=>n+f.size,0)>40*1024*1024)throw Error('Tổng các clip cần nhỏ hơn 40 MB.');
-   const next=[];for(const file of selected){validateFile(file,allowWebm);const head=new Uint8Array(await file.slice(0,16).arrayBuffer());if(!validClipHead(head,allowWebm))throw Error('Có tệp chưa phải video MP4/WebM hợp lệ.');const probe=document.createElement('video');probe.preload='auto';probe.muted=true;probe.playsInline=true;const value=url(file);let duration=await metadata(probe,value);if(allowWebm&&duration===Infinity)duration=3;if(token!==revision||!root){probe.pause();return;}if(!Number.isFinite(duration)||duration<=0||duration>120.05)throw Error('Video gốc cần dài tối đa 2 phút.');next.push({file,duration,url:value});probe.pause();if(next.length===1)sourceVideo=probe;}
+   const allowMulti=kind==='booth',selected=allowMulti?[...files].slice(0,4):[files[0]];
+   if(allowMulti&&![2,3,4].includes(selected.length))throw Error('Chọn 2, 3 hoặc 4 clip cùng lúc để tạo photobooth động.');
+   const limit=maxInputBytes(),limitMb=Math.round(limit/1048576);
+   if(selected.reduce((n,f)=>n+f.size,0)>limit)throw Error(`Tổng dung lượng video cần nhỏ hơn ${limitMb} MB.`);
+   const maxDur=global.Capacitor?.isNativePlatform?.()?600:120.05;
+   const next=[];for(const file of selected){validateFile(file);const head=new Uint8Array(await file.slice(0,16).arrayBuffer());if(!validClipHead(head)&&!file.type?.startsWith('video/'))throw Error('Tệp đã chọn chưa phải định dạng video hợp lệ.');const probe=document.createElement('video');probe.preload='auto';probe.muted=true;probe.playsInline=true;probe.setAttribute?.('playsinline','');probe.setAttribute?.('webkit-playsinline','');const value=url(file);let duration=await metadata(probe,value);if(duration===Infinity)duration=3;if(token!==revision||!root){probe.pause();return;}if(!Number.isFinite(duration)||duration<=0||duration>maxDur)throw Error(`Video gốc cần dài tối đa ${Math.round(maxDur/60)} phút.`);next.push({file,duration,url:value});probe.pause();if(next.length===1)sourceVideo=probe;}
    if(token!==revision||!root)return;records=next;booth.live=false;edit={start:0,end:Math.min(15,records[0].duration),cover:0,mute:false};booth.duration=Math.min(3,...records.map(r=>r.duration));booth.layout=[2,4].includes(records.length)&&booth.layout==='grid'?'grid':records.length===4?'grid':'strip';booth.audio=-1;$('.video-empty').hidden=true;$('video').hidden=false;$('video').src=records[0].url;$('video').load();controls();busy=false;update();save();await apply();
   }catch(e){if(root&&token===revision)status(e.message);}
   finally{if(root&&token===revision){busy=false;update();}}
@@ -112,7 +120,7 @@
  async function apply(){
   if(!root||busy||sending||!records.length)return;const token=++revision;controller?.abort();controller=new AbortController();busy=true;dirty=true;update();status(kind==='booth'?'Đang ghép các clip vào khung…':'Đang cắt video, tạo ảnh bìa và xử lý âm thanh…');
   try{
-   let path,body,headers={};if(kind==='single'){global.ChamEdits.trim(records[0].duration,edit.start,edit.end,edit.cover);path='/api/video/prepare?'+new URLSearchParams({start:edit.start,end:edit.end,cover:edit.cover,mute:edit.mute?'1':'0'});body=records[0].file;headers={'Content-Type':'video/mp4'};}
+   let path,body,headers={};if(kind==='single'){global.ChamEdits.trim(records[0].duration,edit.start,edit.end,edit.cover);path='/api/video/prepare?'+new URLSearchParams({start:edit.start,end:edit.end,cover:edit.cover,mute:edit.mute?'1':'0'});body=records[0].file;headers={'Content-Type':records[0].file.type||'video/mp4'};}
    else{if(![2,3,4].includes(records.length)||!Number.isFinite(booth.duration)||booth.duration<.25||(!booth.live&&booth.duration>Math.min(10,...records.map(r=>r.duration))))throw Error('Chọn thời lượng không quá 10 giây và không dài hơn clip ngắn nhất.');const frame=await global.ChamMotionFrame.create(booth,records.length);path='/api/video/booth';body=new FormData();records.forEach(r=>body.append('clips',r.file,r.file.name));body.append('frame',frame.frame,'frame.png');body.append('slots',JSON.stringify(frame.slots));body.append('duration',booth.duration);body.append('audio',booth.audio);if(booth.live)body.append('live','1');}
    const res=await fetch(path,{method:'POST',credentials:'same-origin',headers,body,signal:controller.signal});let data;try{data=await res.json();}catch{throw Error('Máy chủ local chưa phản hồi đúng định dạng.');}if(!res.ok)throw Error(data.error?.message||'Không xử lý được video.');if(!root||token!==revision)return;
    if(!data.video?.startsWith('data:video/mp4;base64,')||!/^data:image\/(webp|jpeg);base64,/.test(data.image||'')||data.width!==720||data.height!==720)throw Error('Chưa nhận được video hợp lệ.');

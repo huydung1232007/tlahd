@@ -229,28 +229,62 @@ function pickMp4RecorderMime(){
  if(typeof MediaRecorder==='undefined')return'';
  return['video/mp4','video/mp4;codecs=avc1.42E01E','video/webm'].find(m=>MediaRecorder.isTypeSupported?.(m))||'';
 }
-async function prepareSingleOnDevice(fileBytes,params){
+async function prepareSingleOnDevice(bodySource,params){
  const mime=pickMp4RecorderMime();if(!mime.startsWith('video/mp4'))throw new ApiError(503,'Phiên bản iOS này chưa hỗ trợ xuất MP4 trực tiếp trên máy.');
- const blobUrl=URL.createObjectURL(new Blob([fileBytes],{type:'video/mp4'}));
+ const srcBlob=bodySource instanceof Blob?bodySource:new Blob([bodySource],{type:'video/mp4'});
+ const blobUrl=URL.createObjectURL(srcBlob);
+ let audioCtx=null;
  try{
-  const vid=document.createElement('video');vid.playsInline=true;vid.muted=true;vid.src=blobUrl;
-  await new Promise((res,rej)=>{vid.onloadedmetadata=res;vid.onerror=()=>rej(new ApiError(400,'Không đọc được video MP4.'));vid.load();});
-  const start=Number(params.start||0),end=Number(params.end||Math.min(15,vid.duration)),duration=Math.max(.3,Math.min(15,end-start));
+  const vid=document.createElement('video');
+  vid.playsInline=true;vid.setAttribute('playsinline','');vid.setAttribute('webkit-playsinline','');
+  const wantAudio=params.mute!=='1'&&params.mute!==true;
+  vid.muted=!wantAudio;vid.src=blobUrl;
+  await new Promise((res,rej)=>{vid.onloadeddata=res;vid.onerror=()=>rej(new ApiError(400,'Không đọc được video từ thư viện máy.'));vid.load();});
+  const totalDur=Number.isFinite(vid.duration)&&vid.duration>0?vid.duration:10;
+  const start=Math.max(0,Math.min(totalDur-.2,Number(params.start||0)));
+  const rawEnd=params.end!==undefined?Number(params.end):Math.min(15,totalDur);
+  const end=Math.max(start+.3,Math.min(totalDur,rawEnd));
+  const duration=Math.max(.3,Math.min(15,end-start));
+  const coverAt=params.cover!==undefined?Math.max(start,Math.min(end,Number(params.cover))):start;
   const c=document.createElement('canvas');c.width=c.height=720;const ctx=c.getContext('2d');
-  const scale=Math.min(632/vid.videoWidth,632/vid.videoHeight),dw=vid.videoWidth*scale,dh=vid.videoHeight*scale,dx=(720-dw)/2,dy=(720-dh)/2;
-  vid.currentTime=start;await new Promise(r=>{vid.onseeked=r;});
-  ctx.fillStyle='#ffffff';ctx.fillRect(0,0,720,720);ctx.drawImage(vid,dx,dy,dw,dh);
+  const drawVid=()=>{
+   if(!vid.videoWidth||!vid.videoHeight)return;
+   const b=global.ChamEdits?.sourceBox?global.ChamEdits.sourceBox(vid.videoWidth,vid.videoHeight,720,720):{x:0,y:0,width:vid.videoWidth,height:vid.videoHeight};
+   ctx.drawImage(vid,b.x,b.y,b.width,b.height,0,0,720,720);
+  };
+  if(Math.abs(vid.currentTime-coverAt)>.05){vid.currentTime=coverAt;await new Promise(r=>{const done=()=>{vid.removeEventListener('seeked',done);r();};vid.addEventListener('seeked',done);setTimeout(done,1200);});}
+  drawVid();
   const poster=global.ChamEdits?.exportCanvas?global.ChamEdits.exportCanvas(c,.86):c.toDataURL('image/jpeg',.86);
-  const stream=c.captureStream(24),rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:1800000}),chunks=[];
+  if(Math.abs(vid.currentTime-start)>.05){vid.currentTime=start;await new Promise(r=>{const done=()=>{vid.removeEventListener('seeked',done);r();};vid.addEventListener('seeked',done);setTimeout(done,1200);});}
+  const stream=c.captureStream(24);
+  let hasAudio=false;
+  if(wantAudio){
+   try{
+    const AC=global.AudioContext||global.webkitAudioContext;
+    if(AC){
+     audioCtx=new AC();
+     if(audioCtx.state==='suspended')await audioCtx.resume().catch(()=>{});
+     const srcNode=audioCtx.createMediaElementSource(vid),dest=audioCtx.createMediaStreamDestination();
+     srcNode.connect(dest);
+     dest.stream.getAudioTracks().forEach(t=>{stream.addTrack(t);hasAudio=true;});
+    }
+   }catch{vid.muted=true;}
+  }
+  const rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:2000000}),chunks=[];
   rec.ondataavailable=e=>{if(e.data?.size>0)chunks.push(e.data);};
-  const done=new Promise(r=>{rec.onstop=r;});
-  rec.start(200);await vid.play();
-  const t0=performance.now();
-  while(performance.now()-t0<duration*1000&&!vid.ended){ctx.fillStyle='#ffffff';ctx.fillRect(0,0,720,720);ctx.drawImage(vid,dx,dy,dw,dh);await new Promise(r=>requestAnimationFrame(r));}
+  const done=new Promise(r=>{rec.onstop=r;rec.onerror=r;});
+  rec.start(200);
+  try{await vid.play();}catch{vid.muted=true;hasAudio=false;await vid.play();}
+  const t0=Date.now();
+  while(Date.now()-t0<duration*1000&&!vid.ended){drawVid();await new Promise(r=>setTimeout(r,40));}
   vid.pause();if(rec.state!=='inactive')rec.stop();await done;
+  stream.getTracks().forEach(t=>{try{t.stop();}catch{}});
   const outBytes=new Uint8Array(await new Blob(chunks,{type:'video/mp4'}).arrayBuffer());
-  return{video:'data:video/mp4;base64,'+bytesToB64(outBytes),image:poster,duration,width:720,height:720,bytes:outBytes.length,hasAudio:false};
- }finally{URL.revokeObjectURL(blobUrl);}
+  return{video:'data:video/mp4;base64,'+bytesToB64(outBytes),image:poster,duration,width:720,height:720,bytes:outBytes.length,hasAudio};
+ }finally{
+  if(audioCtx)try{audioCtx.close();}catch{}
+  URL.revokeObjectURL(blobUrl);
+ }
 }
 async function prepareBoothOnDevice(form){
  const mime=pickMp4RecorderMime();if(!mime.startsWith('video/mp4'))throw new ApiError(503,'Phiên bản iOS này chưa hỗ trợ ghép MP4 trực tiếp.');
@@ -281,7 +315,7 @@ async function handleApi(url,init={}){
  const u=new URL(url,'https://cham.ios'),path=u.pathname,method=(init.method||'GET').toUpperCase();
  try{
   if(path==='/api/video/status')return jsonResp({available:pickMp4RecorderMime().startsWith('video/mp4'),reason:'Cần iOS 15+ để xử lý video trực tiếp trên iPhone.'});
-  if(path==='/api/video/prepare')return jsonResp(await prepareSingleOnDevice(new Uint8Array(await new Response(init.body).arrayBuffer()),Object.fromEntries(u.searchParams)));
+  if(path==='/api/video/prepare')return jsonResp(await prepareSingleOnDevice(init.body instanceof Blob?init.body:new Uint8Array(await new Response(init.body).arrayBuffer()),Object.fromEntries(u.searchParams)));
   if(path==='/api/video/booth')return jsonResp(await prepareBoothOnDevice(init.body instanceof FormData?init.body:await new Response(init.body,{headers:init.headers}).formData()));
   if(path==='/api/logout'&&method==='POST'){localStorage.removeItem('cham:ios-session');return jsonResp({ok:true});}
   const body=init.body&&typeof init.body==='string'?JSON.parse(init.body):{};

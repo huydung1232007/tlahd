@@ -146,6 +146,26 @@ main{max-width:1020px;margin:0 auto;padding:24px 28px 48px;min-height:calc(100dv
   display:block;transform:none!important;
   object-fit:cover!important;object-position:center center;
 }
+.dual-pip-drag{
+  position:absolute;width:29%;height:37.333%;z-index:6;
+  border-radius:16px;overflow:hidden;
+  border:2.5px solid rgba(255,255,255,.92);
+  box-shadow:0 12px 30px rgba(0,0,0,.58);
+  cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;
+}
+.dual-pip-drag:active{cursor:grabbing;transform:scale(1.03)}
+.dual-pip-drag img{width:100%;height:100%;display:block;object-fit:cover;pointer-events:none}
+.dual-pending-thumb{
+  position:absolute;bottom:14px;left:14px;width:62px;height:78px;padding:0;z-index:6;
+  border-radius:14px;overflow:hidden;border:2px solid rgba(255,255,255,.88);
+  box-shadow:0 8px 22px rgba(0,0,0,.55);background:#101016;
+}
+.dual-pending-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.dual-pending-x{
+  position:absolute;top:4px;right:4px;width:18px;height:18px;border-radius:50%;
+  background:rgba(12,12,16,.78);color:#fff;font-size:10px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;
+}
 .viewfinder-grid{position:absolute;inset:0;pointer-events:none;z-index:2}
 .viewfinder-grid span{position:absolute;background:rgba(255,255,255,.32);box-shadow:0 0 2px rgba(0,0,0,.35)}
 .viewfinder-grid .grid-v1{top:0;bottom:0;left:33.333%;width:1px}
@@ -379,28 +399,32 @@ dialog.locket-viewer-modal #modal-content{height:100%}
 .lv-topbar{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .lv-circle-btn{
   width:42px;height:42px;border-radius:50%;
-  background:#1c1c23;border:1px solid rgba(255,255,255,.1);color:#f2f2f7;
+  background:rgba(255,255,255,.08);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.13);color:#f2f2f7;
   display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;
   transition:transform .12s,background .15s;
 }
+.lv-circle-btn:focus,.lv-circle-btn:focus-visible{outline:none;box-shadow:none}
 .lv-circle-btn svg{width:19px;height:19px}
 .lv-circle-btn:active{transform:scale(.92)}
 .lv-spacer{width:42px;height:42px;flex-shrink:0}
 .lv-top-pill{
   display:inline-flex;align-items:center;gap:8px;
   height:38px;padding:0 16px;border-radius:999px;
-  background:#1c1c23;border:1px solid rgba(255,255,255,.09);
+  background:rgba(255,255,255,.08);backdrop-filter:blur(22px) saturate(175%);-webkit-backdrop-filter:blur(22px) saturate(175%);border:1px solid rgba(255,255,255,.13);
   font-size:14px;font-weight:650;color:#fff;max-width:calc(100% - 104px);
 }
 .lv-top-pill>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lv-count-sep{color:#8e94a2;font-size:12px;font-weight:550;flex-shrink:0}
 
-.lv-stage-wrap{display:flex;flex-direction:column;align-items:center;margin:auto 0}
-.lv-card{width:100%;aspect-ratio:1/1;position:relative;display:block}
+.lv-stage-wrap{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  width:100%;padding:6px 0 10px;
+}
+.lv-card{width:100%;max-width:416px;aspect-ratio:1/1;position:relative;display:block}
 .lv-media-box{
-  width:100%;height:100%;border-radius:36px;overflow:hidden;
-  background:#15151d;border:1px solid rgba(255,255,255,.08);
-  box-shadow:0 24px 58px rgba(0,0,0,.65);
+  width:100%;height:100%;border-radius:38px;overflow:hidden;
+  background:#15151d;border:1px solid rgba(255,255,255,.1);
+  box-shadow:0 22px 54px rgba(0,0,0,.62);
 }
 .lv-media{width:100%;height:100%;display:block;object-fit:cover}
 .lv-reacted-badge{
@@ -411,10 +435,10 @@ dialog.locket-viewer-modal #modal-content{height:100%}
   display:flex;align-items:center;justify-content:center;font-size:18px;
 }
 .lv-caption-pill{
-  position:absolute;bottom:-14px;left:50%;transform:translateX(-50%);z-index:4;
+  margin-top:16px;
   max-width:88%;padding:9px 18px;border-radius:999px;
-  background:rgba(20,20,27,.86);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
-  border:1px solid rgba(255,255,255,.11);box-shadow:0 12px 28px rgba(0,0,0,.55);
+  background:rgba(255,255,255,.1);backdrop-filter:blur(24px) saturate(180%);-webkit-backdrop-filter:blur(24px) saturate(180%);
+  border:1px solid rgba(255,255,255,.18);box-shadow:0 8px 24px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.14);
   color:#fff;font-size:15px;font-weight:620;line-height:1.35;text-align:center;
   overflow-wrap:anywhere;
 }
@@ -432,7 +456,7 @@ dialog.locket-viewer-modal #modal-content{height:100%}
 
 .lv-sender-row{
   display:flex;align-items:center;justify-content:center;gap:9px;
-  margin-top:26px;
+  margin-top:14px;
 }
 .lv-sender-avatar{width:28px;height:28px;font-size:11px}
 .lv-sender-name{font-size:15px;font-weight:700;color:#fff}
@@ -451,7 +475,7 @@ dialog.locket-viewer-modal #modal-content{height:100%}
 .lv-reply-capsule{
   display:flex;align-items:center;gap:6px;width:100%;
   min-height:54px;padding:6px 10px 6px 18px;border-radius:999px;
-  background:#1c1c23;border:1px solid rgba(255,255,255,.09);
+  background:rgba(255,255,255,.08);backdrop-filter:blur(22px) saturate(175%);-webkit-backdrop-filter:blur(22px) saturate(175%);border:1px solid rgba(255,255,255,.13);
 }
 .lv-reply-input{
   flex:1;min-width:0;background:none;border:0;outline:none;
