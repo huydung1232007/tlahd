@@ -64,7 +64,16 @@ const hasLiveSet=()=>state.mode==='booth'&&liveClips.slice(0,need()).filter(Bool
 const isDigitalActive=()=>state.mode==='photo'&&(state.look!=='natural'||state.grain>0||state.stamp);
 const isToneActive=()=>!!(state.tone?.brightness||state.tone?.contrast||state.tone?.warmth);
 const isCameraLive=()=>!!(media&&(!media.getVideoTracks||media.getVideoTracks().some(t=>t.readyState==='live'&&!t.muted)));
-const effectiveDigitalZoom=()=>state.zoom>1&&hwZoomApplied<state.zoom?Math.min(4,state.zoom/Math.max(1,hwZoomApplied)):1;
+function effectiveDigitalZoom(){
+ if(state.facing==='user'&&!usingUltraWideDevice&&hwZoomApplied>=1){
+  // Front iPhone TrueDepth lens is native wide (23mm): 0.5x uses full wide sensor (1.0), 1x uses natural portrait framing (1.22)
+  if(state.zoom<=0.5)return 1;
+  if(state.zoom<=1)return 1+((state.zoom-0.5)/0.5)*0.22;
+  if(state.zoom<2)return 1.22+(state.zoom-1)*0.78;
+  return Math.min(4,state.zoom/Math.max(1,hwZoomApplied));
+ }
+ return state.zoom>1&&hwZoomApplied<state.zoom?Math.min(4,state.zoom/Math.max(1,hwZoomApplied)):1;
+}
 
 function stop(){sequence++;state.busy=false;state.countdown=0;startingCamera=false;hwZoomApplied=1;usingUltraWideDevice=false;try{activeRecorder?.cancel();}catch{}activeRecorder=null;if(media){media.getTracks().forEach(t=>{try{t.onended=null;t.stop();}catch{}});media=null;}const v=$('video');if(v)v.srcObject=null;}
 function ensureCamera(){
@@ -97,11 +106,18 @@ function videoFilterCss(){
  return parts.length?parts.join(' '):'none';
 }
 function syncVideoBox(){
- const v=$('video');if(!v)return;
+ const v=$('video'),vf=$('.viewfinder');if(!v)return;
  const vw=v.videoWidth||0,vh=v.videoHeight||0;
- if(vw>0&&vh>0){
-  v.style.width=(vw>=vh?(vw/vh)*100:100).toFixed(3)+'%';
-  v.style.height=(vh>vw?(vh/vw)*100:100).toFixed(3)+'%';
+ const bw=vf?.clientWidth||1,bh=vf?.clientHeight||1;
+ if(vw>0&&vh>0&&bw>0&&bh>0){
+  const videoRatio=vw/vh,boxRatio=bw/bh;
+  if(videoRatio>boxRatio){
+   v.style.height='100%';
+   v.style.width=((videoRatio/boxRatio)*100).toFixed(3)+'%';
+  }else{
+   v.style.width='100%';
+   v.style.height=((boxRatio/videoRatio)*100).toFixed(3)+'%';
+  }
  }else{v.style.width='100%';v.style.height='100%';}
 }
 function videoTransformCss(){
@@ -110,7 +126,7 @@ function videoTransformCss(){
  return `translate(-50%,-50%) scale(${flipX.toFixed(3)},${dz.toFixed(3)})`;
 }
 function zoomPresets(){
- return state.facing==='environment'?[0.5,1,2,3]:[1,1.5,2];
+ return [0.5,1,2,3];
 }
 function formatZoomLabel(z,isActive){
  const clean=Math.round(z*10)/10;
@@ -231,14 +247,16 @@ function update(){
 
 async function rebuild(){if(!root)return;if(state.shots.length<need()){state.output='';state.aiResult='';state.aiApplied='';state.status=state.mode==='booth'&&state.shots.length?`Đã có ${state.shots.length}/${need()} tấm.`:'';update();saveDraft();ensureCamera();return;}const id=++renderId,version=mounted;update();try{const data=await compose(state.shots,state);if(version!==mounted||id!==renderId||!root)return;state.output=data;state.aiResult='';state.aiApplied='';state.status='';update();saveDraft();}catch(e){if(root&&version===mounted&&id===renderId){state.status=e.message;update();}}}
 
-async function findRearCameraDevice(wantUltraWide){
+async function findCameraDevice(facing,wantUltraWide){
  if(!global.navigator?.mediaDevices?.enumerateDevices)return null;
  try{
   const list=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput'&&d.deviceId);
+  const isFront=facing==='user';
+  const sideMatch=d=>isFront?/front|trước|user|truedepth|facetime/i.test(d.label||''):/back|rear|sau|environment/i.test(d.label||'');
   if(wantUltraWide){
-   return list.find(d=>/ultra\s*wide|siêu\s*rộng|0\.5/i.test(d.label||''))||null;
+   return list.find(d=>sideMatch(d)&&/ultra\s*wide|siêu\s*rộng|0\.5|center\s*stage/i.test(d.label||''))||(!isFront?list.find(d=>/ultra\s*wide|siêu\s*rộng|0\.5/i.test(d.label||''))||null:null);
   }
-  return list.find(d=>/back|rear|sau|environment/i.test(d.label||'')&&!/ultra\s*wide|siêu\s*rộng|telephoto/i.test(d.label||''))||null;
+  return list.find(d=>sideMatch(d)&&!/ultra\s*wide|siêu\s*rộng|telephoto|tele|dual|kép|triple|ba\s*camera/i.test(d.label||''))||null;
  }catch{return null;}
 }
 
@@ -275,18 +293,19 @@ async function applyTrackZoom(target){
 }
 
 async function openCameraStream(preferUltraWide=false){
- const resHint={width:{ideal:1440},height:{ideal:1440}};
- if(state.facing==='environment'&&preferUltraWide){
-  const uw=await findRearCameraDevice(true);
+ // Request full 4:3 portrait sensor so 0.5x on front & rear captures widest uncropped field of view
+ const resHint={width:{ideal:1440},height:{ideal:1920}};
+ if(preferUltraWide){
+  const uw=await findCameraDevice(state.facing,true);
   if(uw){
    try{const s=await navigator.mediaDevices.getUserMedia({video:{deviceId:{exact:uw.deviceId},...resHint},audio:false});usingUltraWideDevice=true;return s;}catch{}
   }
  }
  usingUltraWideDevice=false;
- if(state.facing==='environment'&&!preferUltraWide){
-  const mainBack=await findRearCameraDevice(false);
-  if(mainBack){
-   try{return await navigator.mediaDevices.getUserMedia({video:{deviceId:{exact:mainBack.deviceId},...resHint},audio:false});}catch{}
+ if(!preferUltraWide){
+  const mainCam=await findCameraDevice(state.facing,false);
+  if(mainCam){
+   try{return await navigator.mediaDevices.getUserMedia({video:{deviceId:{exact:mainCam.deviceId},...resHint},audio:false});}catch{}
   }
  }
  try{return await navigator.mediaDevices.getUserMedia({video:{facingMode:{exact:state.facing},...resHint},audio:false});}
@@ -296,7 +315,7 @@ async function openCameraStream(preferUltraWide=false){
  }
 }
 
-async function start(preferUltraWide=state.facing==='environment'&&state.zoom<1){
+async function start(preferUltraWide=state.zoom<1){
  stop();startingCamera=true;const version=mounted,generation=sequence;state.status='';update();
  try{
   if(!navigator.mediaDevices?.getUserMedia)throw Error();
@@ -320,23 +339,18 @@ async function start(preferUltraWide=state.facing==='environment'&&state.zoom<1)
 }
 
 async function setZoom(nextZoom){
- const minZ=state.facing==='environment'?0.5:1;
- const clamped=Math.max(minZ,Math.min(4,Math.round(Number(nextZoom)*10)/10||1));
+ const clamped=Math.max(0.5,Math.min(4,Math.round(Number(nextZoom)*10)/10||1));
  state.zoom=clamped;
  if(!isCameraLive()){update();return;}
- if(state.facing==='environment'){
-  if(clamped<1){
-   const ok=await applyTrackZoom(clamped);
-   if(!ok&&!usingUltraWideDevice){
-    const uw=await findRearCameraDevice(true);
-    if(uw){await start(true);return;}
-    state.zoom=1;state.status='Máy này không mở được ống kính 0.5×.';setTimeout(()=>{if(root&&state.status.includes('0.5×')){state.status='';update();}},2200);
-   }
-  }else{
-   if(usingUltraWideDevice){await start(false);return;}
-   await applyTrackZoom(clamped);
+ if(clamped<1){
+  const ok=await applyTrackZoom(clamped);
+  if(!ok&&!usingUltraWideDevice){
+   const uw=await findCameraDevice(state.facing,true);
+   if(uw){await start(true);return;}
+   // On front camera without separate ultra-wide deviceId, 0.5x widens seamlessly to full uncropped 23mm sensor (effectiveDigitalZoom = 1.0 vs 1.22 at 1x)
   }
  }else{
+  if(usingUltraWideDevice){await start(false);return;}
   await applyTrackZoom(clamped);
  }
  update();
@@ -513,8 +527,7 @@ function bindPinchZoom(vf){
   if(e.touches?.length===2&&pinchStartDist>10&&isCameraLive()&&!state.busy){
    e.preventDefault?.();
    const ratio=dist(e.touches)/pinchStartDist;
-   const minZ=state.facing==='environment'?0.5:1;
-   const next=Math.max(minZ,Math.min(4,Math.round(pinchStartZoom*ratio*10)/10));
+   const next=Math.max(0.5,Math.min(4,Math.round(pinchStartZoom*ratio*10)/10));
    if(Math.abs(next-state.zoom)>=0.1)setZoom(next);
   }
  },{passive:false});

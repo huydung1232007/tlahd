@@ -393,15 +393,24 @@ textarea.text-field{min-height:82px;resize:vertical}
   .navigation{display:none}
   .search-box{height:34px;padding:0 11px}
   .search-box input{width:clamp(95px,31vw,150px);font-size:16px}
-  main{padding:16px 18px calc(112px + env(safe-area-inset-bottom,0px))}
-  .studio-layout{display:flex;flex-direction:column;gap:20px;max-width:520px;margin:0 auto}
+  main{padding:12px 14px calc(94px + env(safe-area-inset-bottom,0px))}
+  .studio-layout{display:flex;flex-direction:column;gap:18px;max-width:520px;margin:0 auto}
   .camera-area,.studio-settings{width:100%}
+  .studio:not(.is-booth) .studio-layout.single-col .camera-area{
+    min-height:calc(100dvh - 216px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));
+    display:flex;flex-direction:column;justify-content:space-between;
+  }
   .viewfinder{
-    width:min(500px,calc(100vw - 14px));
-    height:min(500px,calc(100vw - 14px));
+    width:min(520px,calc(100vw - 8px));
+    height:clamp(376px,calc(100dvh - 332px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px)),496px);
+    aspect-ratio:auto;
     max-width:none;max-height:none;
     margin-left:50%;transform:translateX(-50%);
-    border-radius:40px;
+    border-radius:42px;
+  }
+  .studio:not(.is-booth) .studio-layout.single-col .capture-controls,
+  .studio:not(.is-booth) .studio-layout.single-col .review-actions{
+    margin:auto 0;padding:14px 0 6px;
   }
   .feed-grid,.friend-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 14px}
 
@@ -427,7 +436,7 @@ textarea.text-field{min-height:82px;resize:vertical}
   }
   .mobile-nav .nav-link svg{display:block;width:20px;height:20px}
   .mobile-nav .nav-link.active{background:rgba(255,200,61,.16);color:var(--gold);box-shadow:none}
-  .page-footer{padding:8px 20px calc(98px + env(safe-area-inset-bottom,0px))}
+  .page-footer{display:none}
   #toast{bottom:calc(88px + env(safe-area-inset-bottom,0px));font-size:12px}
 }
 
@@ -437,8 +446,9 @@ textarea.text-field{min-height:82px;resize:vertical}
   .studio-heading h1{font-size:20px}
   .camera-modes{margin-bottom:14px;width:100%;justify-content:space-between}
   .camera-modes button{flex:1;padding:8px 10px;font-size:12px;text-align:center}
-  .shutter,.send-shutter{width:74px;height:74px}
-  .capture-controls,.review-actions{gap:36px}
+  .shutter,.send-shutter{width:82px;height:82px}
+  .round-control,.review-icon-btn{width:56px;height:56px}
+  .capture-controls,.review-actions{gap:38px}
   .feed-grid{grid-template-columns:1fr;gap:24px}
   .photo-wrap{border-radius:28px}
   .photo-caption{font-size:15px;bottom:18px;left:18px;right:18px}
