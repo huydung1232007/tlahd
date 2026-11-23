@@ -49,3 +49,19 @@ test('search box hides on non-searchable views, updates placeholder, and filters
   await handlers.click({target:{closest:()=>({dataset:{action:'detail',id:'mem-2'}})}});
   assert.match(el('#modal-content').innerHTML,/Mở \/ tải ảnh/);
 });
+test('friend filter dropdown toggles menu, highlights active selection, and renders compact card metadata',async()=>{
+  const c=client(()=>ok({moments:[{id:'m-1',author:'friend-1',caption:'',image:'https://example.com/m-1.webp',time:Date.now()-10*60000}],nextCursor:null,source:'history'}));
+  c.run('timelineFor().items=[{id:"m-1",author:"friend-1",caption:"",image:"https://example.com/m-1.webp",time:Date.now()-10*60000}];timelineFor().loaded=true;render();');
+  assert.match(c.html(),/Tất cả bạn bè/);
+  assert.match(c.html(),/1 ảnh/);
+  assert.match(c.html(),/First/);
+  assert.match(c.html(),/10 phút/);
+  assert.ok(!c.html().includes('friend-dropdown-menu'));
+  await c.click({action:'toggle-friend-menu'});
+  assert.match(c.html(),/friend-dropdown-menu/);
+  assert.match(c.html(),/First/);
+  assert.match(c.html(),/Second/);
+  await c.click({person:'friend-1'});
+  assert.ok(!c.html().includes('friend-dropdown-menu'));
+  assert.match(c.html(),/friend-filter-label">First</);
+});
