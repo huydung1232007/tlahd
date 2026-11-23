@@ -65,20 +65,43 @@
 .motion-frame-colors{margin:-2px 0 14px}
 .modal-media-actions{margin-top:14px;display:flex}.modal-media-actions .secondary{font-size:12px;padding:8px 15px;min-height:36px}
 
-.camera-quick-tools{display:flex;align-items:center;gap:8px;pointer-events:auto}
+.camera-quick-tools{display:flex;align-items:center;gap:7px;pointer-events:auto}
 .timer-control{position:relative;display:flex;align-items:center;gap:6px;pointer-events:auto}
-.timer-trigger,.features-trigger{
+.flash-trigger,.timer-trigger,.features-trigger{
   display:inline-flex;align-items:center;justify-content:center;gap:5px;
   min-width:36px;height:36px;padding:0 10px;border-radius:999px;
   background:rgba(14,14,20,.68);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
   border:1px solid rgba(255,255,255,.15);color:#f2f2f7;font-size:11px;font-weight:650;
   transition:background .15s,border-color .15s,color .15s,transform .12s;
 }
-.features-trigger{padding:0;width:36px}
-.timer-trigger svg,.features-trigger svg{width:17px;height:17px}
+.flash-trigger,.features-trigger{padding:0;width:36px}
+.flash-trigger svg,.timer-trigger svg,.features-trigger svg{width:17px;height:17px}
 .timer-trigger .timer-badge:empty{display:none}
-.timer-trigger.has-timer,.timer-trigger.open,.features-trigger.open{background:var(--gold);border-color:var(--gold);color:#121216}
+.flash-trigger.active,.timer-trigger.has-timer,.timer-trigger.open,.features-trigger.open{background:var(--gold);border-color:var(--gold);color:#121216}
 .features-trigger.has-active:not(.open){border-color:var(--gold);color:var(--gold);box-shadow:0 0 0 1px rgba(255,200,61,.35)}
+
+.zoom-bar{
+  position:absolute;bottom:14px;left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;gap:5px;padding:4px;
+  background:rgba(12,12,16,.62);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  border:1px solid rgba(255,255,255,.14);border-radius:999px;
+  z-index:5;pointer-events:auto;
+}
+.zoom-pill{
+  min-width:32px;height:32px;padding:0 8px;border-radius:999px;
+  background:transparent;color:rgba(255,255,255,.85);
+  font-size:11px;font-weight:700;letter-spacing:-.2px;
+  display:inline-flex;align-items:center;justify-content:center;
+  transition:transform .14s,background .14s,color .14s;
+}
+.zoom-pill.active{
+  background:rgba(255,255,255,.16);color:var(--gold);
+  transform:scale(1.06);box-shadow:0 2px 8px rgba(0,0,0,.35);
+}
+.retina-screen-flash{
+  position:fixed;inset:0;z-index:9999;
+  background:#fff9f0;pointer-events:none;
+}
 .timer-popover{
   position:absolute;top:calc(100% + 7px);right:0;
   display:flex;align-items:center;gap:3px;padding:4px;

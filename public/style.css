@@ -105,17 +105,36 @@ main{max-width:1020px;margin:0 auto;padding:24px 28px 48px;min-height:calc(100dv
 .studio-layout.single-col{grid-template-columns:minmax(0,500px)}
 .camera-area{min-width:0}
 .viewfinder{
-  aspect-ratio:4/5;max-height:600px;
-  background:#121218;
-  border-radius:34px;
-  border:1px solid rgba(255,255,255,.11);
-  box-shadow:0 26px 68px rgba(0,0,0,.68),inset 0 1px 0 rgba(255,255,255,.06);
-  overflow:hidden;position:relative;display:flex;justify-content:center;align-items:center;
+  display:block;
+  width:100%;
+  aspect-ratio:1/1;
+  max-width:500px;
+  margin:0 auto;
+  background:#0d0d12;
+  border-radius:40px;
+  border:2.5px solid rgba(255,196,54,.72);
+  box-shadow:0 26px 68px rgba(0,0,0,.72),0 0 24px rgba(255,196,54,.12);
+  overflow:hidden;position:relative;
+  isolation:isolate;
+  -webkit-mask-image:-webkit-radial-gradient(white,black);
 }
-.viewfinder video,.studio-result{width:100%;height:100%;position:absolute;inset:0;object-fit:cover;object-position:center center}
-.viewfinder.has-output{background:#0f0f14}
-.viewfinder.has-output .studio-result{object-fit:contain;padding:16px}
-.viewfinder-empty{text-align:center;color:var(--muted);padding:32px}
+.viewfinder video{
+  position:absolute;top:50%;left:50%;
+  width:100%;height:100%;
+  max-width:none;max-height:none;
+  display:block;
+  object-fit:cover;object-position:center center;
+  transform-origin:center center;
+}
+.studio-result{
+  position:absolute;top:0;left:0;right:0;bottom:0;
+  width:100%!important;height:100%!important;
+  display:block;
+  object-fit:cover!important;object-position:center center;
+}
+.viewfinder.has-output{background:#0b0b10}
+.viewfinder.is-booth-output .studio-result{object-fit:contain!important;padding:12px}
+.viewfinder-empty{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;color:var(--muted);padding:32px}
 .camera-outline{font-size:48px;color:var(--gold);opacity:.85;display:block;margin-bottom:16px;font-weight:300}
 .viewfinder-empty strong{font-size:17px;font-weight:620;color:var(--text);display:block}
 .viewfinder-empty p{font-size:13px;line-height:1.7;margin:8px auto 0;color:var(--muted);max-width:220px}
@@ -377,7 +396,13 @@ textarea.text-field{min-height:82px;resize:vertical}
   main{padding:16px 18px calc(112px + env(safe-area-inset-bottom,0px))}
   .studio-layout{display:flex;flex-direction:column;gap:20px;max-width:520px;margin:0 auto}
   .camera-area,.studio-settings{width:100%}
-  .viewfinder{max-height:none;border-radius:32px}
+  .viewfinder{
+    width:min(500px,calc(100vw - 14px));
+    height:min(500px,calc(100vw - 14px));
+    max-width:none;max-height:none;
+    margin-left:50%;transform:translateX(-50%);
+    border-radius:40px;
+  }
   .feed-grid,.friend-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 14px}
 
   /* iPhone Floating Glass Pill Dock */
