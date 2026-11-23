@@ -30,7 +30,36 @@ function safeUrl(value){try{const u=new URL(value);return u.protocol==='https:'?
 function profile(raw,uid){const p=raw?.user||raw||{};return {id:uid||p.uid||p.user_uid,name:[p.first_name,p.last_name].filter(Boolean).join(' ')||p.username||'Bạn',username:String(p.username||''),image:safeUrl(p.profile_picture_url||p.profile_picture||p.avatar_url||''),email:String(p.email||'')};}
 const getProfile=async(s,uid=s.uid)=>profile(await call(s,'fetchUserV2',{user_uid:uid}),uid);
 function stamp(d){if(typeof d==='object'&&d)return Number(d._seconds??d.seconds??0)*1000;const n=Number(d);return Number.isFinite(n)&&n>0?(n<1e12?n*1000:n):Date.parse(d)||Date.now();}
-function moment(p,uid){return {id:String(p.canonical_uid||p.moment_uid||p.id||''),author:String(p.user||p.user_uid||uid||''),caption:String(p.caption||p.overlays?.find(o=>o.overlay_type==='caption')?.data?.text||''),image:safeUrl(p.image_url||p.thumbnail_url),time:stamp(p.date||p.created_at),video:safeUrl(p.video_url||'')};}
+const REACTION_EMOJIS=['❤️','🔥','😂','😍','🥺','👏'];
+function parseInlineReactions(raw){
+ if(!raw)return[];
+ const items=Array.isArray(raw)?raw:typeof raw==='object'?Object.entries(raw).map(([k,v])=>typeof v==='object'&&v?{user:k,...v}:{user:k,value:v}):[];
+ return items.map(r=>({user:String(r?.user||r?.user_uid||r?.uid||''),emoji:String(r?.value||r?.reaction||r?.emoji||'❤️'),time:stamp(r?.date||r?.created_at||0)})).filter(r=>r.user);
+}
+function moment(p,uid){return {id:String(p.canonical_uid||p.moment_uid||p.id||''),author:String(p.user||p.user_uid||uid||''),caption:String(p.caption||p.overlays?.find(o=>o.overlay_type==='caption')?.data?.text||''),image:safeUrl(p.image_url||p.thumbnail_url),time:stamp(p.date||p.created_at),video:safeUrl(p.video_url||''),reactions:parseInlineReactions(p.reactions)};}
+async function momentReactions(s,id){
+ if(typeof id!=='string'||!id||id.length>128||!/^[A-Za-z0-9_-]+$/.test(id))throw new ApiError(400,'Mã khoảnh khắc không hợp lệ.','INVALID_INPUT');
+ const urls=[
+  `https://firestore.googleapis.com/v1/projects/locket-4252a/databases/locket/documents/moments/${encodeURIComponent(id)}/reactions?pageSize=50`,
+  `https://firestore.googleapis.com/v1/projects/locket-4252a/databases/locket/documents/history/${encodeURIComponent(s.uid)}/entries/${encodeURIComponent(id)}/reactions?pageSize=50`,
+ ];
+ const seen=new Map();
+ for(const u of urls){
+  try{
+   const res=await remote(u,{headers:{...headers(s),Authorization:`Bearer ${s.idToken}`}},10000);
+   if(!res.ok)continue;
+   const d=await res.json();
+   for(const doc of(d.documents||[])){
+    const f=Object.fromEntries(Object.entries(doc.fields||{}).map(([k,v])=>[k,parseValue(v)]));
+    const user=String(f.user||f.user_uid||f.uid||doc.name.split('/').pop()||'');
+    if(!user)continue;
+    seen.set(user,{user,emoji:String(f.value||f.reaction||f.emoji||'❤️'),time:stamp(f.date||f.created_at||doc.createTime)});
+   }
+   if(seen.size)break;
+  }catch{}
+ }
+ return{reactions:[...seen.values()]};
+}
 async function friends(s){const d=await jsonRemote(`https://firestore.googleapis.com/v1/projects/locket-4252a/databases/(default)/documents/users/${encodeURIComponent(s.uid)}/friends?pageSize=100`,{headers:{Authorization:`Bearer ${s.idToken}`}},'data');const ids=(d.documents||[]).map(d=>d.name.split('/').pop()).slice(0,100);const result=[];for(let i=0;i<ids.length;i+=5){result.push(...await Promise.all(ids.slice(i,i+5).map(async id=>{try{return await getProfile(s,id);}catch{return {id,name:'Người bạn',username:'',image:''};}})));}return result;}
 async function feed(s){const result=await call(s,'getLatestMomentV2',{should_count_missed_moments:true});const rows=Array.isArray(result)?result:Array.isArray(result?.moments)?result.moments:[];return rows.map(p=>moment(p)).filter(p=>p.id&&p.image);}
 function parseValue(v){if(!v)return null;if('stringValue'in v)return v.stringValue;if('timestampValue'in v)return v.timestampValue;if('integerValue'in v)return Number(v.integerValue);if('mapValue'in v)return Object.fromEntries(Object.entries(v.mapValue.fields||{}).map(([k,v])=>[k,parseValue(v)]));if('arrayValue'in v)return(v.arrayValue.values||[]).map(parseValue);return null;}
@@ -269,7 +298,7 @@ const baseHeaders={'Cache-Control':'no-store, private','X-Content-Type-Options':
 function json(value,status=200,cookieValue){return new Response(JSON.stringify(value),{status,headers:{...baseHeaders,...(cookieValue?{'Set-Cookie':cookieValue}:{})}});}
 async function rateLimit(request){const ip=request.headers.get('cf-connecting-ip')||'unknown';const key=base64url(new Uint8Array(await crypto.subtle.digest('SHA-256',encoder.encode(ip))));const now=Date.now();if(loginAttempts.size>2000)for(const[k,v]of loginAttempts)if(v.until<now)loginAttempts.delete(k);if(loginAttempts.size>4000)throw new ApiError(429,'Máy chủ đang bận. Vui lòng thử lại sau.','RATE_LIMIT');let count=loginAttempts.get(key);if(!count||count.until<now)count={value:0,until:now+15*60000};if(count.value>=10)throw new ApiError(429,'Bạn đã thử nhiều lần. Vui lòng chờ 15 phút.','RATE_LIMIT');count.value++;loginAttempts.set(key,count);}
 export default {async fetch(request,env){const url=new URL(request.url),path=url.pathname;if(!path.startsWith('/api/')){if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Method not allowed',{status:405});const asset=ASSETS[path];if(!asset)return new Response('Not found',{status:404});return new Response(request.method==='HEAD'?null:asset.body,{headers:{'Content-Type':asset.type,'Cache-Control':'no-cache','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Permissions-Policy':'camera=(self), microphone=(), geolocation=()','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'self' https://chatgpt.com https://*.chatgpt.com"}});}
-try{const methods={'/api/login':'POST','/api/logout':'POST','/api/session':'GET','/api/bootstrap':'GET','/api/feed':'GET','/api/history':'GET','/api/moments':'POST','/api/videos':'POST','/api/moment-image':'POST','/api/reaction':'POST','/api/ai/status':'GET','/api/ai/edit':'POST'};if(!methods[path])throw new ApiError(404,'Không tìm thấy chức năng.','NOT_FOUND');if(request.method!==methods[path])throw new ApiError(405,'Phương thức không hợp lệ.','METHOD_NOT_ALLOWED');if(request.method==='POST'){if(request.headers.get('Origin')!==url.origin||request.headers.get('Sec-Fetch-Site')==='cross-site')throw new ApiError(403,'Yêu cầu không hợp lệ. Hãy tải lại trang.','ORIGIN_REJECTED');if(!request.headers.get('Content-Type')?.startsWith('application/json'))throw new ApiError(415,'Dữ liệu phải ở định dạng JSON.','CONTENT_TYPE');}
+try{const methods={'/api/login':'POST','/api/logout':'POST','/api/session':'GET','/api/bootstrap':'GET','/api/feed':'GET','/api/history':'GET','/api/moments':'POST','/api/videos':'POST','/api/moment-image':'POST','/api/reaction':'POST','/api/reactions':'GET','/api/ai/status':'GET','/api/ai/edit':'POST'};if(!methods[path])throw new ApiError(404,'Không tìm thấy chức năng.','NOT_FOUND');if(request.method!==methods[path])throw new ApiError(405,'Phương thức không hợp lệ.','METHOD_NOT_ALLOWED');if(request.method==='POST'){if(request.headers.get('Origin')!==url.origin||request.headers.get('Sec-Fetch-Site')==='cross-site')throw new ApiError(403,'Yêu cầu không hợp lệ. Hãy tải lại trang.','ORIGIN_REJECTED');if(!request.headers.get('Content-Type')?.startsWith('application/json'))throw new ApiError(415,'Dữ liệu phải ở định dạng JSON.','CONTENT_TYPE');}
 if(path==='/api/logout')return json({ok:true},200,clearCookie());
 await sessionKey(env);
 if(path==='/api/login'){await rateLimit(request);const b=await readJson(request,8192);if(typeof b.email!=='string'||!/^\S+@\S+\.\S+$/.test(b.email)||b.email.length>254||typeof b.password!=='string'||b.password.length<1||b.password.length>1024)throw new ApiError(400,'Nhập email và mật khẩu Locket của bạn.','INVALID_INPUT');const s=await login(b.email.trim(),b.password);let p;try{p=await getProfile(s);}catch{p={id:s.uid,name:'Bạn',username:'',image:'',email:s.email};}return json({connected:true,profile:p},200,cookie(await seal(s,env)));}
@@ -281,5 +310,6 @@ if(path==='/api/bootstrap'){const results=await Promise.allSettled([getProfile(s
 if(path==='/api/feed'||path==='/api/history'){const page=await historyPage(s,{user:path==='/api/history'?s.uid:url.searchParams.get('user')||null,cursor:url.searchParams.get('cursor'),limit:url.searchParams.has('limit')?Number(url.searchParams.get('limit')):30});return json(page,200,await refreshed());}
 if(path==='/api/moments'||path==='/api/videos'){const body=await readJson(request,path==='/api/videos'?10*1024*1024:7*1024*1024);const video=path==='/api/videos'?videoBytes(body):null;let result;try{result=await post(s,body,video);}catch(e){if(e.code==='UPSTREAM_UNAVAILABLE')throw new ApiError(502,'Kết nối bị gián đoạn. Hãy kiểm tra trong Locket trước khi gửi lại để tránh đăng trùng.','POST_UNCONFIRMED');throw e;}return json(result,200,await refreshed());}
 if(path==='/api/moment-image')return json(await momentImageProxy(await readJson(request,4096)),200,await refreshed());
-if(path==='/api/reaction'){const b=await readJson(request,2048);if(typeof b.id!=='string'||b.id.length>128||!b.id)throw new ApiError(400,'Thiếu mã khoảnh khắc.','INVALID_INPUT');await call(s,'reactToMoment',{moment_uid:b.id,reaction:'❤️',from_memory:false,intensity:{'@type':'type.googleapis.com/google.protobuf.Int64Value',value:'0'}});return json({ok:true},200,await refreshed());}
+if(path==='/api/reactions')return json(await momentReactions(s,url.searchParams.get('id')||''),200,await refreshed());
+if(path==='/api/reaction'){const b=await readJson(request,2048);if(typeof b.id!=='string'||b.id.length>128||!b.id)throw new ApiError(400,'Thiếu mã khoảnh khắc.','INVALID_INPUT');const emoji=REACTION_EMOJIS.includes(b.emoji)?b.emoji:'❤️';await call(s,'reactToMoment',{moment_uid:b.id,reaction:emoji,from_memory:false,intensity:{'@type':'type.googleapis.com/google.protobuf.Int64Value',value:'0'}});return json({ok:true,emoji},200,await refreshed());}
 }catch(e){const status=e instanceof ApiError?e.status:500;return json({error:{code:e instanceof ApiError?e.code:'SERVER_ERROR',message:e instanceof ApiError?e.message:'Máy chủ gặp sự cố. Vui lòng thử lại sau.'}},status,status===401&&e.code==='AUTH_REQUIRED'?clearCookie():undefined);}}};

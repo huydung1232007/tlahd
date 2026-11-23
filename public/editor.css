@@ -65,19 +65,19 @@
 .motion-frame-colors{margin:-2px 0 14px}
 .modal-media-actions{margin-top:14px;display:flex}.modal-media-actions .secondary{font-size:12px;padding:8px 15px;min-height:36px}
 
-.camera-quick-tools{display:flex;align-items:center;gap:7px;pointer-events:auto}
-.timer-control{position:relative;display:flex;align-items:center;gap:6px;pointer-events:auto}
-.flash-trigger,.timer-trigger,.features-trigger{
-  display:inline-flex;align-items:center;justify-content:center;gap:5px;
-  min-width:36px;height:36px;padding:0 10px;border-radius:999px;
+.camera-quick-tools{display:flex;align-items:center;gap:6px;pointer-events:auto}
+.timer-control{position:relative;display:flex;align-items:center;gap:5px;pointer-events:auto}
+.dual-trigger,.grid-trigger,.flash-trigger,.timer-trigger,.features-trigger{
+  display:inline-flex;align-items:center;justify-content:center;gap:4px;
+  min-width:34px;height:34px;padding:0 9px;border-radius:999px;
   background:rgba(14,14,20,.68);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
   border:1px solid rgba(255,255,255,.15);color:#f2f2f7;font-size:11px;font-weight:650;
   transition:background .15s,border-color .15s,color .15s,transform .12s;
 }
-.flash-trigger,.features-trigger{padding:0;width:36px}
-.flash-trigger svg,.timer-trigger svg,.features-trigger svg{width:17px;height:17px}
+.dual-trigger,.grid-trigger,.flash-trigger,.features-trigger{padding:0;width:34px}
+.dual-trigger svg,.grid-trigger svg,.flash-trigger svg,.timer-trigger svg,.features-trigger svg{width:16px;height:16px}
 .timer-trigger .timer-badge:empty{display:none}
-.flash-trigger.active,.timer-trigger.has-timer,.timer-trigger.open,.features-trigger.open{background:var(--gold);border-color:var(--gold);color:#121216}
+.dual-trigger.active,.grid-trigger.active,.flash-trigger.active,.timer-trigger.has-timer,.timer-trigger.open,.features-trigger.open{background:var(--gold);border-color:var(--gold);color:#121216}
 .features-trigger.has-active:not(.open){border-color:var(--gold);color:var(--gold);box-shadow:0 0 0 1px rgba(255,200,61,.35)}
 
 .zoom-bar{

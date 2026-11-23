@@ -90,7 +90,36 @@ const analytics=s=>({ios_version:'2.68.0.2523',installation_id:s.installation,pl
 const safeUrl=v=>{try{const u=new URL(v);return u.protocol==='https:'?u.href:'';}catch{return '';}};
 const stamp=d=>{if(typeof d==='object'&&d)return Number(d._seconds??d.seconds??0)*1000;const n=Number(d);return Number.isFinite(n)&&n>0?(n<1e12?n*1000:n):Date.parse(d)||Date.now();};
 const normProfile=(raw,uid)=>{const p=raw?.user||raw||{};return{id:uid||p.uid||p.user_uid,name:[p.first_name,p.last_name].filter(Boolean).join(' ')||p.username||'Bạn',username:String(p.username||''),image:safeUrl(p.profile_picture_url||p.profile_picture||p.avatar_url||''),email:String(p.email||'')};};
-const normMoment=(p,uid)=>({id:String(p.canonical_uid||p.moment_uid||p.id||''),author:String(p.user||p.user_uid||uid||''),caption:String(p.caption||p.overlays?.find(o=>o.overlay_type==='caption')?.data?.text||''),image:safeUrl(p.image_url||p.thumbnail_url),time:stamp(p.date||p.created_at),video:safeUrl(p.video_url||'')});
+const REACTION_EMOJIS=['❤️','🔥','😂','😍','🥺','👏'];
+function parseInlineReactions(raw){
+ if(!raw)return[];
+ const items=Array.isArray(raw)?raw:typeof raw==='object'?Object.entries(raw).map(([k,v])=>typeof v==='object'&&v?{user:k,...v}:{user:k,value:v}):[];
+ return items.map(r=>({user:String(r?.user||r?.user_uid||r?.uid||''),emoji:String(r?.value||r?.reaction||r?.emoji||'❤️'),time:stamp(r?.date||r?.created_at||0)})).filter(r=>r.user);
+}
+const normMoment=(p,uid)=>({id:String(p.canonical_uid||p.moment_uid||p.id||''),author:String(p.user||p.user_uid||uid||''),caption:String(p.caption||p.overlays?.find(o=>o.overlay_type==='caption')?.data?.text||''),image:safeUrl(p.image_url||p.thumbnail_url),time:stamp(p.date||p.created_at),video:safeUrl(p.video_url||''),reactions:parseInlineReactions(p.reactions)});
+async function fetchMomentReactions(s,id){
+ if(!id||!/^[A-Za-z0-9_-]{1,128}$/.test(id))return{reactions:[]};
+ const urls=[
+  `https://firestore.googleapis.com/v1/projects/locket-4252a/databases/locket/documents/moments/${encodeURIComponent(id)}/reactions?pageSize=50`,
+  `https://firestore.googleapis.com/v1/projects/locket-4252a/databases/locket/documents/history/${encodeURIComponent(s.uid)}/entries/${encodeURIComponent(id)}/reactions?pageSize=50`,
+ ];
+ const seen=new Map();
+ for(const targetUrl of urls){
+  try{
+   const res=await httpRequest({url:targetUrl,headers:{...locketHeaders(),Authorization:`Bearer ${s.idToken}`}});
+   if(res.status<200||res.status>=300)continue;
+   const d=res.json?res.json():JSON.parse(res.text());
+   for(const doc of(d?.documents||[])){
+    const f=Object.fromEntries(Object.entries(doc.fields||{}).map(([k,v])=>[k,parseFsVal(v)]));
+    const user=String(f.user||f.user_uid||f.uid||doc.name.split('/').pop()||'');
+    if(!user)continue;
+    seen.set(user,{user,emoji:String(f.value||f.reaction||f.emoji||'❤️'),time:stamp(f.date||f.created_at||doc.createTime)});
+   }
+   if(seen.size)break;
+  }catch{}
+ }
+ return{reactions:[...seen.values()]};
+}
 
 async function authed(){
  const s=await loadSession();
@@ -303,7 +332,8 @@ async function handleApi(url,init={}){
    const id=created?.canonical_uid||created?.id;if(!id)throw new ApiError(502,'Chưa nhận được mã xác nhận từ Locket.','POST_UNCONFIRMED');
    return jsonResp({confirmed:true,moment:{id,author:s.uid,caption:built.caption,image:thumbUrl,...(videoUrl?{video:videoUrl}:{}),time:Date.now()}});
   }
-  if(path==='/api/reaction'){await callLocket(s,'reactToMoment',{moment_uid:String(body.id||''),reaction:'❤️',from_memory:false,intensity:{'@type':'type.googleapis.com/google.protobuf.Int64Value',value:'0'}});return jsonResp({ok:true});}
+  if(path==='/api/reactions')return jsonResp(await fetchMomentReactions(s,u.searchParams.get('id')||''));
+  if(path==='/api/reaction'){const emoji=REACTION_EMOJIS.includes(body.emoji)?body.emoji:'❤️';await callLocket(s,'reactToMoment',{moment_uid:String(body.id||''),reaction:emoji,from_memory:false,intensity:{'@type':'type.googleapis.com/google.protobuf.Int64Value',value:'0'}});return jsonResp({ok:true,emoji});}
   throw new ApiError(404,'Không tìm thấy chức năng.','NOT_FOUND');
  }catch(e){
   return jsonResp({error:{code:e instanceof ApiError?e.code:'SERVER_ERROR',message:e.message||'Đã xảy ra lỗi trên iPhone.'}},e instanceof ApiError?e.status:500);

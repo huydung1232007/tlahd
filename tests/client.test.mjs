@@ -65,3 +65,27 @@ test('friend filter dropdown toggles menu, highlights active selection, and rend
   assert.ok(!c.html().includes('friend-dropdown-menu'));
   assert.match(c.html(),/friend-filter-label">First</);
 });
+test('detail modal supports continuous next/prev navigation, multi-emoji reactions, and viewing who reacted',async()=>{
+  const postedBodies=[];
+  const c=client((path,opts)=>{
+    if(path==='/api/reaction'){postedBodies.push(JSON.parse(opts.body));return ok({ok:true,emoji:'🔥'});}
+    if(path.startsWith('/api/reactions?id=mine-1'))return ok({reactions:[{user:'friend-1',emoji:'😍',time:Date.now()}]});
+    return ok({reactions:[]});
+  });
+  c.run('timelineFor().items=[{id:"p-1",author:"friend-1",caption:"Tấm 1",image:"https://example.com/1.webp",time:Date.now()},{id:"p-2",author:"friend-2",caption:"Tấm 2",image:"https://example.com/2.webp",time:Date.now()-60000}];timelineFor().loaded=true;render();');
+  await c.click({action:'detail',id:'p-1'});
+  assert.match(c.element('#modal-content').innerHTML,/1 \/ 2/);
+  assert.match(c.element('#modal-content').innerHTML,/emoji-reaction-bar/);
+  await c.click({action:'react',id:'p-1',emoji:'🔥'});
+  assert.deepEqual(postedBodies,[{id:'p-1',emoji:'🔥'}]);
+  assert.match(c.element('#modal-content').innerHTML,/emoji-react-btn active[^>]*data-emoji="🔥"/);
+  await c.click({action:'detail-nav',id:'p-2'});
+  assert.match(c.element('#modal-content').innerHTML,/2 \/ 2/);
+  assert.match(c.element('#modal-content').innerHTML,/Tấm 2/);
+
+  c.run('filter="mine";timelineFor("me").items=[{id:"mine-1",author:"me",caption:"Ảnh của tôi",image:"https://example.com/m.webp",time:Date.now(),reactions:[{user:"friend-1",emoji:"😍",time:Date.now()}]}];timelineFor("me").loaded=true;render();');
+  await c.click({action:'detail',id:'mine-1'});
+  assert.match(c.element('#modal-content').innerHTML,/Đã thả cảm xúc \(1\)/);
+  assert.match(c.element('#modal-content').innerHTML,/First/);
+  assert.match(c.element('#modal-content').innerHTML,/😍/);
+});

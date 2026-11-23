@@ -153,7 +153,17 @@ test('Studio camera auto-starts on mount, collapses timer by default, removes he
   assert.equal(root.querySelector('.zoom-bar').innerHTML,'<span class="zoom-pill active">2×</span>','shows only current x value');
   timers.pop()?.();
   assert.equal(root.querySelector('.zoom-bar').hidden,true,'zoom HUD disappears after 3s');
-  // 7. clearAfterPost wipes Studio state cleanly
+  // 7. Grid 3x3, Dual Cam toggle, and Double-tap viewfinder camera flip
+  assert.equal(root.querySelector('.viewfinder-grid').hidden,true);
+  for(const fn of root.listeners.click)await fn({target:{closest:sel=>sel==='[data-studio]'?{dataset:{studio:'toggle-grid'}}:null}});
+  assert.equal(root.querySelector('.viewfinder-grid').hidden,false);
+  for(const fn of root.listeners.click)await fn({target:{closest:sel=>sel==='[data-studio]'?{dataset:{studio:'toggle-dual'}}:null}});
+  assert.equal(root.querySelector('.mode-label').textContent,'DUAL CAM');
+  const callsBeforeFlip=cameraCalls;
+  const vfEl=root.querySelector('.viewfinder');
+  for(const fn of vfEl.listeners.dblclick||[])await fn({target:{closest:()=>null}});
+  assert.ok(cameraCalls>callsBeforeFlip,'double-tapping viewfinder flips camera stream');
+  // 8. clearAfterPost wipes Studio state cleanly
   context.ChamStudio.clearAfterPost();
   assert.equal(store.has('studio:u-cam'),false);
 });
