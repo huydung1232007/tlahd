@@ -53,21 +53,22 @@ async function loadSession(){
  }catch{localStorage.removeItem('cham:ios-session');throw new ApiError(401,'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.','AUTH_REQUIRED');}
 }
 
-async function httpRequest({url,method='GET',headers={},data,dataType}){
+async function httpRequest({url,method='GET',headers={},data,dataType,responseType}){
  const capHttp=global.Capacitor?.Plugins?.CapacitorHttp;
  if(!capHttp?.request){
-  const body=dataType==='base64'?b64ToBytes(data):typeof data==='string'?data:data!==undefined?JSON.stringify(data):undefined;
+  const body=dataType==='file'?b64ToBytes(data):typeof data==='string'?data:data!==undefined?JSON.stringify(data):undefined;
   const r=await nativeFetch(url,{method,headers,body});
   const ab=await r.arrayBuffer();
   return{status:r.status,headers:Object.fromEntries(r.headers.entries()),data:ab,text:()=>dec.decode(ab)};
  }
- const opts={url,method,headers,connectTimeout:25000,readTimeout:120000};
+ const opts={url,method,headers,connectTimeout:90000,readTimeout:120000};
  if(data!==undefined)opts.data=data;
  if(dataType)opts.dataType=dataType;
- if(headers.Accept?.startsWith('image/'))opts.responseType='blob';
+ if(responseType)opts.responseType=responseType;
+ else if(headers.Accept?.startsWith('image/'))opts.responseType='blob';
  const res=await capHttp.request(opts);
  const normHeaders=Object.fromEntries(Object.entries(res.headers||{}).map(([k,v])=>[k.toLowerCase(),v]));
- return{status:res.status,headers:normHeaders,raw:res.data,json:()=>typeof res.data==='string'?JSON.parse(res.data):res.data};
+ return{status:res.status,headers:normHeaders,raw:res.data,json:()=>typeof res.data==='string'?JSON.parse(res.data):res.data,text:()=>typeof res.data==='string'?res.data:JSON.stringify(res.data??'')};
 }
 async function jsonHttp(opts,stage='data'){
  let res;try{res=await httpRequest(opts);}catch{throw new ApiError(502,'Chưa kết nối được máy chủ Locket. Kiểm tra mạng trên iPhone.','UPSTREAM_UNAVAILABLE');}
@@ -77,7 +78,9 @@ async function jsonHttp(opts,stage='data'){
   if(/INVALID_LOGIN_CREDENTIALS|INVALID_PASSWORD|EMAIL_NOT_FOUND/.test(raw))throw new ApiError(401,'Email hoặc mật khẩu Locket chưa đúng.','INVALID_CREDENTIALS');
   if(res.status===429||/TOO_MANY|QUOTA|RATE_LIMIT/.test(raw))throw new ApiError(429,'Locket đang giới hạn số lần thử. Vui lòng chờ một chút.','RATE_LIMIT');
   if(res.status===401||/INVALID_REFRESH_TOKEN|TOKEN_EXPIRED/.test(raw)){localStorage.removeItem('cham:ios-session');throw new ApiError(401,'Phiên Locket đã hết hạn. Vui lòng đăng nhập lại.','AUTH_REQUIRED');}
-  throw new ApiError(502,stage==='login'?'Locket chưa chấp nhận đăng nhập này (chỉ hỗ trợ email & mật khẩu).':stage==='post'?'Locket chưa xác nhận bài đăng. Kiểm tra trong app Locket trước khi gửi lại.':'Không lấy được dữ liệu từ Locket.','UPSTREAM_REJECTED');
+  if(/APP_CHECK|APPCHECK/.test(raw))throw new ApiError(502,'Locket đang yêu cầu xác minh ứng dụng (App Check).','APP_CHECK_REQUIRED');
+  const msg=stage==='login'?'Locket chưa chấp nhận đăng nhập này (chỉ hỗ trợ email & mật khẩu).':stage==='post'?`Locket chưa xác nhận bài đăng (mã ${res.status}). Kiểm tra trong app Locket trước khi gửi lại.`:stage==='upload'?`Không tải được tệp lên Locket Storage (mã ${res.status}).`:stage==='refresh'?`Không làm mới được phiên Locket (mã ${res.status}).`:`Không lấy được dữ liệu từ Locket (mã ${res.status}).`;
+  throw new ApiError(502,msg,'UPSTREAM_REJECTED');
  }
  return data;
 }
@@ -118,6 +121,12 @@ async function historyPage(s,{user=null,cursor=null,limit=30}={}){
  if(docs.length>size&&last){const date=last.fields?.date?.timestampValue||last.createTime;if(date&&last.name)nextCursor=b64url(enc.encode(JSON.stringify({version:1,owner:s.uid,user:user||null,date,docName:last.name})));}
  return{moments,nextCursor,source:'history'};
 }
+async function latestFeed(s){
+ const r=await callLocket(s,'getLatestMomentV2',{should_count_missed_moments:true});
+ const rows=Array.isArray(r)?r:Array.isArray(r?.moments)?r.moments:[];
+ return rows.map(p=>normMoment(p)).filter(p=>p.id&&p.image);
+}
+async function timeline(s){try{return await historyPage(s);}catch(e){if(e.code==='AUTH_REQUIRED')throw e;return{moments:await latestFeed(s),nextCursor:null,source:'latest'};}}
 async function friendsList(s){
  const d=await jsonHttp({url:`https://firestore.googleapis.com/v1/projects/locket-4252a/databases/(default)/documents/users/${encodeURIComponent(s.uid)}/friends?pageSize=100`,headers:{Authorization:`Bearer ${s.idToken}`}});
  const ids=(d.documents||[]).map(doc=>doc.name.split('/').pop()).slice(0,100),out=[];
@@ -128,12 +137,12 @@ async function friendsList(s){
 async function uploadResumable(s,baseUrl,objectPath,mime,b64Data,byteLength){
  const encoded=encodeURIComponent(objectPath);
  const init=await httpRequest({url:`${baseUrl}/${encoded}?uploadType=resumable&name=${encoded}`,method:'POST',headers:{...locketHeaders(),Authorization:`Firebase ${s.idToken}`,'x-goog-upload-protocol':'resumable','x-goog-upload-command':'start','x-goog-upload-content-type':mime,'x-goog-upload-content-length':String(byteLength),'x-firebase-storage-version':'ios/12.12.1','x-firebase-gmpid':APP_ID},data:{bucket:'',contentType:mime,name:objectPath,metadata:{visibility:'private',creator:s.uid},cacheControl:'public, max-age=604800'}});
- if(init.status<200||init.status>=300)throw new ApiError(502,'Locket chưa cấp địa chỉ tải tệp.','UPLOAD_FAILED');
+ if(init.status<200||init.status>=300)throw new ApiError(502,`Locket chưa cấp địa chỉ tải tệp (mã ${init.status}).`,'UPLOAD_FAILED');
  const uploadUrl=init.headers['x-goog-upload-url'];if(!uploadUrl)throw new ApiError(502,'Thiếu liên kết tải lên từ Locket.','UPLOAD_FAILED');
- // Explicit base64 dataType ensures CapacitorHttp on iOS bridges binary bytes intact without dropping body
- const uploaded=await jsonHttp({url:uploadUrl,method:'PUT',headers:{'Content-Type':'application/octet-stream','x-goog-upload-protocol':'resumable','x-goog-upload-command':'upload, finalize','x-goog-upload-offset':'0','x-goog-upload-content-length':String(byteLength)},data:b64Data,dataType:'base64'},'upload');
+ // CapacitorHttp iOS (CapacitorUrlRequest.swift) requires dataType='file' to decode Base64 into raw binary Data
+ const uploaded=await jsonHttp({url:uploadUrl,method:'PUT',headers:{'Content-Type':'application/octet-stream','x-goog-upload-protocol':'resumable','x-goog-upload-command':'upload, finalize','x-goog-upload-offset':'0','x-goog-upload-content-length':String(byteLength)},data:b64Data,dataType:'file'},'upload');
  let token=uploaded?.downloadTokens?.split(',')[0];
- if(!token){const meta=await jsonHttp({url:`${baseUrl}/${encoded}`,headers:{Authorization:`Firebase ${s.idToken}`}},'upload');token=meta?.downloadTokens?.split(',')[0];}
+ if(!token){const meta=await jsonHttp({url:`${baseUrl}/${encoded}`,headers:{'User-Agent':locketHeaders()['User-Agent'],'x-ios-bundle-identifier':'com.locket.Locket',Authorization:`Firebase ${s.idToken}`}},'upload');token=meta?.downloadTokens?.split(',')[0];}
  if(!token)throw new ApiError(502,'Locket chưa cấp mã truy cập tệp.','UPLOAD_FAILED');
  return `${baseUrl}/${encoded}?alt=media&token=${encodeURIComponent(token)}`;
 }
@@ -164,7 +173,7 @@ async function iosAiEdit(body){
  if(!cfg.accountId||!cfg.token)throw new ApiError(403,'Mở tab Tài khoản để điền Account ID & Token Cloudflare AI trên iPhone.','AI_NOT_AVAILABLE');
  const promptRaw=String(body?.prompt||'').trim();if(!promptRaw)throw new ApiError(400,'Nhập mô tả chỉnh ảnh.','INVALID_INPUT');
  const imgStr=String(body?.image||'');if(!/^data:image\/(webp|jpeg);base64,/.test(imgStr))throw new ApiError(400,'Chọn ảnh trước khi chỉnh AI.','INVALID_IMAGE');
- const mime=imgStr.startsWith('data:image/jpeg')?'image/jpeg':'image/webp',rawB64=imgStr.slice(imgStr.indexOf(',')+1),bytes=b64ToBytes(rawB64);
+ const mime=imgStr.startsWith('data:image/jpeg')?'image/jpeg':'image/webp',rawB64=imgStr.slice(imgStr.indexOf(',')+1).replace(/\s+/g,''),bytes=b64ToBytes(rawB64);
  let prompt=promptRaw;
  if(/[^\x00-\x7F]/.test(promptRaw)){
   try{const tr=await jsonHttp({url:`${CF_BASE}${cfg.accountId}/ai/run/@cf/meta/llama-3.1-8b-instruct-fast`,method:'POST',headers:{Authorization:`Bearer ${cfg.token}`,'Content-Type':'application/json'},data:{messages:[{role:'system',content:'Translate this Vietnamese photo-editing prompt into concise English under 55 words, keeping face and framing intact. Output ONLY the English prompt.'},{role:'user',content:promptRaw}],max_tokens:120,temperature:0.2}});if(tr?.result?.response)prompt=String(tr.result.response).trim();}catch{}
@@ -173,8 +182,13 @@ async function iosAiEdit(body){
  const form=new FormData();form.append('prompt',prompt);form.append('width','832');form.append('height','1024');
  form.append('input_image_0',new Blob([bytes],{type:mime}),mime==='image/jpeg'?'input.jpg':'input.webp');
  const serialized=new Response(form),ct=serialized.headers.get('Content-Type'),ab=new Uint8Array(await serialized.arrayBuffer());
- const res=await httpRequest({url:`${CF_BASE}${cfg.accountId}/ai/run/${model}`,method:'POST',headers:{Authorization:`Bearer ${cfg.token}`,'Content-Type':ct},data:bytesToB64(ab),dataType:'base64'});
- const data=res.json?res.json():JSON.parse(res.text());
+ const res=await httpRequest({url:`${CF_BASE}${cfg.accountId}/ai/run/${model}`,method:'POST',headers:{Authorization:`Bearer ${cfg.token}`,'Content-Type':ct},data:bytesToB64(ab),dataType:'file',responseType:'blob'});
+ if(res.status>=200&&res.status<300&&res.headers['content-type']?.startsWith('image/')){
+  const rawOut=typeof res.raw==='string'?res.raw:bytesToB64(new Uint8Array(res.data));
+  const outMime=detectMime(b64ToBytes(rawOut))||'image/jpeg';
+  return{image:`data:${outMime};base64,${rawOut}`,provider:'cloudflare'};
+ }
+ let data;try{data=res.json?res.json():JSON.parse(res.text());}catch{data=null;}
  if(res.status<200||res.status>=300||data?.success===false)throw new ApiError(res.status===429?429:502,res.status===429?'Đã hết lượt miễn phí hôm nay trên Cloudflare AI.':'Cloudflare AI chưa chỉnh được ảnh. Kiểm tra lại Account ID & Token trong Tài khoản.','AI_REJECTED');
  const outB64=data?.result?.image;if(!outB64)throw new ApiError(502,'Cloudflare chưa trả về ảnh.','AI_NO_IMAGE');
  const outMime=detectMime(b64ToBytes(outB64))||'image/jpeg';
@@ -184,7 +198,7 @@ async function iosAiEdit(body){
 // On-device iPhone Canvas + Hardware H.264 MediaRecorder Video Composer (works offline from PC!)
 function pickMp4RecorderMime(){
  if(typeof MediaRecorder==='undefined')return'';
- return['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4','video/webm'].find(m=>MediaRecorder.isTypeSupported?.(m))||'';
+ return['video/mp4','video/mp4;codecs=avc1.42E01E','video/webm'].find(m=>MediaRecorder.isTypeSupported?.(m))||'';
 }
 async function prepareSingleOnDevice(fileBytes,params){
  const mime=pickMp4RecorderMime();if(!mime.startsWith('video/mp4'))throw new ApiError(503,'Phiên bản iOS này chưa hỗ trợ xuất MP4 trực tiếp trên máy.');
@@ -255,7 +269,7 @@ async function handleApi(url,init={}){
   if(path==='/api/ai/status'){const cfg=readAiConfig();return jsonResp(cfg.accountId&&cfg.token?{available:true,provider:'cloudflare',reason:'Cloudflare AI đã sẵn sàng trên iPhone.'}:{available:false,reason:'Mở mục Tài khoản để nhập Cloudflare Account ID & Token trên iPhone.'});}
   if(path==='/api/ai/edit')return jsonResp(await iosAiEdit(body));
   if(path==='/api/bootstrap'){
-   const res=await Promise.allSettled([getProfile(s),friendsList(s),historyPage(s)]);
+   const res=await Promise.allSettled([getProfile(s),friendsList(s),timeline(s)]);
    const warnings=[];['profile','friends','feed'].forEach((n,i)=>{if(res[i].status==='rejected')warnings.push(n);});
    const page=res[2].status==='fulfilled'?res[2].value:{moments:[],nextCursor:null,source:'unavailable'};
    return jsonResp({connected:true,profile:res[0].status==='fulfilled'?res[0].value:{id:s.uid,name:'Bạn',username:'',image:''},friends:res[1].status==='fulfilled'?res[1].value:[],moments:page.moments,nextCursor:page.nextCursor,feedSource:page.source,warnings});
@@ -265,17 +279,22 @@ async function handleApi(url,init={}){
    const target=new URL(String(body.url||''));
    if(target.hostname!=='firebasestorage.googleapis.com')throw new ApiError(400,'Liên kết ảnh không hợp lệ.');
    const r=await httpRequest({url:target.href,headers:{Accept:'image/*'}});
+   if(r.status<200||r.status>=300)throw new ApiError(502,'Không tải được ảnh kỷ niệm từ Locket.','UPSTREAM_REJECTED');
    const b64=typeof r.raw==='string'?r.raw:bytesToB64(new Uint8Array(r.data));
    const mime=detectMime(b64ToBytes(b64))||'image/webp';
    return jsonResp({image:`data:${mime};base64,${b64}`});
   }
   if(path==='/api/moments'||path==='/api/videos'){
-   const imgStr=String(body.image||''),mime=imgStr.startsWith('data:image/jpeg')?'image/jpeg':'image/webp',ext=mime==='image/jpeg'?'jpg':'webp';
-   const imgB64=imgStr.slice(imgStr.indexOf(',')+1),imgBytes=b64ToBytes(imgB64);
+   const imgStr=String(body.image||'');
+   if(!/^data:image\/(webp|jpeg);base64,/.test(imgStr))throw new ApiError(400,'Ảnh chưa sẵn sàng để gửi lên Locket.','INVALID_IMAGE');
+   const mime=imgStr.startsWith('data:image/jpeg')?'image/jpeg':'image/webp',ext=mime==='image/jpeg'?'jpg':'webp';
+   const imgB64=imgStr.slice(imgStr.indexOf(',')+1).replace(/\s+/g,''),imgBytes=b64ToBytes(imgB64);
    const thumbUrl=await uploadResumable(s,STORAGE,`users/${s.uid}/moments/thumbnails/${crypto.randomUUID().replaceAll('-','').slice(0,20)}.${ext}`,mime,imgB64,imgBytes.length);
    let videoUrl=null;
    if(path==='/api/videos'){
-    const vB64=String(body.video||'').slice(22),vBytes=b64ToBytes(vB64);
+    const vStr=String(body.video||'');
+    if(!vStr.startsWith('data:video/mp4')||!vStr.includes(','))throw new ApiError(400,'Chọn video MP4 đã xử lý trước khi đăng.','INVALID_VIDEO');
+    const vB64=vStr.slice(vStr.indexOf(',')+1).replace(/\s+/g,''),vBytes=b64ToBytes(vB64);
     videoUrl=await uploadResumable(s,VIDEO_STORAGE,`users/${s.uid}/moments/videos/${crypto.randomUUID().replaceAll('-','').slice(0,20)}.mp4`,'video/mp4',vB64,vBytes.length);
    }
    const built=buildOverlays(String(body.caption||'').trim(),body.overlayStyle||'standard',body.timeLabel);
