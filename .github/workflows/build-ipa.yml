@@ -29,7 +29,9 @@ jobs:
         working-directory: ios-build
         run: |
           npm install --no-audit --no-fund
-          npx cap add ios --packagemanager SPM
+          # Capacitor 7 sync uses CocoaPods; create the matching Podfile template.
+          npx cap add ios
+          test -f ios/App/Podfile
           npx cap sync ios
 
       - name: Cấu hình quyền Camera, Micro, Thư viện ảnh & Icon iOS
