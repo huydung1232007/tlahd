@@ -93,3 +93,19 @@ test('detail modal renders Locket-style viewer with reply message bar, continuou
   assert.match(c.element('#modal-content').innerHTML,/First/);
   assert.match(c.element('#modal-content').innerHTML,/😍/);
 });
+
+test('compact post sheet renders 1-tap horizontal avatar recipient strip and updates audience summary',async()=>{
+  const c=client(()=>ok({}));
+  await c.click({action:'upload'});
+  const strip=c.element('#post-audience-strip');
+  assert.ok(strip,'renders horizontal audience strip');
+  assert.match(strip.innerHTML,/data-post-aud="all"/);
+  assert.match(strip.innerHTML,/data-post-aud="self"/);
+  assert.match(strip.innerHTML,/data-post-recipient="friend-1"/);
+  await c.click({postRecipient:'friend-1'});
+  assert.equal(c.element('#post-audience-input').value,'selected');
+  assert.match(c.element('#post-audience-summary').textContent,/1 người bạn/);
+  await c.click({postAud:'self'});
+  assert.equal(c.element('#post-audience-input').value,'self');
+  assert.match(c.element('#post-audience-summary').textContent,/mình tôi/);
+});

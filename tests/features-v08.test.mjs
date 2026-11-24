@@ -185,7 +185,18 @@ test('Studio camera auto-starts on mount, collapses timer by default, removes he
   for(const fn of pipDragEl.listeners.pointerup||[])await fn();
   assert.notEqual(pipDragEl.style.left,'4.950%','dragging PiP updates horizontal position');
 
-  // 8. clearAfterPost wipes Studio state cleanly
+  // 8. Exposure HUD opens on tap and applies live brightness, grid preference persists
+  assert.equal(prefs.get('studio:grid'),true,'3x3 grid preference persists across launches');
+  const expTimers=[];
+  context.setTimeout=(fn,ms)=>{if(ms===3500){expTimers.push(fn);return 101;}fn();return 1;};
   context.ChamStudio.clearAfterPost();
+  await new Promise(r=>setTimeout(r,20));
   assert.equal(store.has('studio:u-cam'),false);
+  for(const fn of vfEl.listeners.click||[])fn({target:{closest:()=>null}});
+  assert.equal(root.querySelector('.exposure-hud').hidden,false,'single tap opens exposure HUD');
+  const expInp=root.querySelector('#cam-exposure');
+  for(const fn of expInp.listeners.input||[])await fn({target:{value:'15'}});
+  assert.match(root.querySelector('.camera-canvas').style.filter,/brightness\(1\.15\)/);
+  expTimers.pop()?.();
+  assert.equal(root.querySelector('.exposure-hud').hidden,true,'exposure HUD auto-hides after 3.5s');
 });
